@@ -1,8 +1,8 @@
 {
   "team_name": "NexusBrain",
-  "project_title": "CHANGE_ME",
-  "one_liner": "CHANGE_ME: one sentence about what you're building",
-  "track": "CHANGE_ME: physical-world | ai-agents | area-of-expertise",
+  "project_title": "Intent Lock",
+  "one_liner": "A task-scoped gateway that checks an agent's calendar actions against a user-approved permission.",
+  "track": "ai-agents",
   "members": [
     { "name": "Adish Jain", "github": "adishjain01" }
   ]
