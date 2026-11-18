@@ -142,10 +142,10 @@ This is a prototype, not production security: there is no authentication, persis
 Requires Python 3.10+; no dependencies or API keys.
 
 ```bash
-python server.py
+python intent-lock/server.py
 ```
 
-Open http://127.0.0.1:8000. Run tests with `python -m unittest -v`. To run the independent HTTP agent instead of the browser button, approve a fresh permission and run `python agent.py` in another terminal; refresh the page to see its decision trail.
+Open http://127.0.0.1:8000. Run tests with `python -m unittest discover -s intent-lock -v`. To run the independent HTTP agent instead of the browser button, approve a fresh permission and run `python intent-lock/agent.py` in another terminal; refresh the page to see its decision trail.
 
 ### Demo
 
@@ -153,4 +153,5 @@ Open http://127.0.0.1:8000. Run tests with `python -m unittest -v`. To run the i
 2. Click **Run demo agent**. The decision trail shows blocked attempts and a permitted reschedule; the calendar updates.
 3. Reset, approve another permission, and let a judge choose a different target, action or time using **Test an action**. Show the reason it was blocked. A permitted action consumes the permission, so a repeat is blocked.
 4. Use Reset between demos. To change a constraint, review and approve a fresh permission.
+
 
