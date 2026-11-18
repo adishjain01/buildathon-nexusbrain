@@ -4,6 +4,7 @@ Approve a permission in the UI, then run: python agent.py
 The agent never has direct access to the calendar store.
 """
 import json
+import argparse
 from datetime import date, timedelta
 from urllib.request import Request, urlopen
 
@@ -45,4 +46,9 @@ def main():
         day += timedelta(days=1)
     print('No available slot found within the approved boundaries.')
 
-if __name__ == '__main__': main()
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Run the Intent Lock demo agent')
+    parser.add_argument('--port', type=int, default=8000)
+    args = parser.parse_args()
+    BASE = f'http://127.0.0.1:{args.port}/api/'
+    main()

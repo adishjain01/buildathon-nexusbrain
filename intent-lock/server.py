@@ -1,4 +1,5 @@
 import json
+import argparse
 import threading
 import uuid
 from datetime import date, datetime, timedelta
@@ -125,6 +126,22 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, TypeError, json.JSONDecodeError) as e: self.send_json({'error':str(e)},400)
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Run the Intent Lock local demo')
+    parser.add_argument('--port', type=int, default=8000, help='local port (default: 8000)')
+    args = parser.parse_args()
+    if not 1 <= args.port <= 65535:
+        parser.error('port must be between 1 and 65535')
     reset()
-    print('Intent Lock running at http://127.0.0.1:8000', flush=True)
-    ThreadingHTTPServer(('127.0.0.1',8000), Handler).serve_forever()
+    try:
+        httpd = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
+    except OSError as exc:
+        print(f'Could not start on port {args.port}: {exc}. Try --port 8001.', flush=True)
+        raise SystemExit(1)
+    print(f'Intent Lock running at http://127.0.0.1:{args.port}/', flush=True)
+    print('Keep this window open; press Ctrl+C to stop.', flush=True)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print('\nServer stopped.', flush=True)
+    finally:
+        httpd.server_close()
