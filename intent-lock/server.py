@@ -43,6 +43,18 @@ def valid_time(value):
 def approve(body):
     meeting = next((m for m in state['meetings'] if m['id'] == body.get('meeting_id')), None)
     if not meeting: raise ValueError('Choose an existing meeting.')
+    kind = body.get('type', 'reschedule')
+    if kind == 'add_attendee':
+        attendee = body.get('attendee')
+        if not isinstance(attendee, str) or not attendee.strip() or len(attendee.strip()) > 100 or any(ord(c) < 32 for c in attendee):
+            raise ValueError('Enter a valid attendee name or email (up to 100 characters).')
+        attendee = attendee.strip()
+        if attendee.casefold() in (x.casefold() for x in meeting['attendees']):
+            raise ValueError('This attendee is already on the meeting.')
+        policy = {'id':str(uuid.uuid4()), 'type':kind, 'meeting_id':meeting['id'], 'meeting_version':meeting['version'], 'attendee':attendee, 'expires_at':(datetime.now()+timedelta(minutes=15)).isoformat(), 'used':False}
+        state['policy'] = policy
+        return policy
+    if kind != 'reschedule': raise ValueError('Unsupported permission type.')
     try:
         start, end = date.fromisoformat(body['start_date']), date.fromisoformat(body['end_date'])
         days = body['days']
@@ -50,7 +62,7 @@ def approve(body):
         if not valid_time(body['earliest']) or not valid_time(body['latest']) or body['earliest'] > body['latest']: raise ValueError()
     except (KeyError, TypeError, ValueError): raise ValueError('Enter a valid date range, time range, and at least one day.')
     # This demonstration uses server-local calendar time and a short-lived capability.
-    policy = {'id':str(uuid.uuid4()), 'meeting_id':meeting['id'], 'meeting_version':meeting['version'], 'start_date':start.isoformat(), 'end_date':end.isoformat(), 'earliest':body['earliest'], 'latest':body['latest'], 'days':sorted(set(days)), 'expires_at':(datetime.now()+timedelta(minutes=15)).isoformat(), 'used':False}
+    policy = {'id':str(uuid.uuid4()), 'type':kind, 'meeting_id':meeting['id'], 'meeting_version':meeting['version'], 'start_date':start.isoformat(), 'end_date':end.isoformat(), 'earliest':body['earliest'], 'latest':body['latest'], 'days':sorted(set(days)), 'expires_at':(datetime.now()+timedelta(minutes=15)).isoformat(), 'used':False}
     state['policy'] = policy
     return policy
 
@@ -60,11 +72,19 @@ def gateway(action):
     if not p: return audit(action, False, 'No active approved permission.')
     if p['used']: return audit(action, False, 'Permission already used.')
     if datetime.now() >= datetime.fromisoformat(p['expires_at']): return audit(action, False, 'Permission expired.')
-    if action.get('type') != 'reschedule': return audit(action, False, 'Only rescheduling is authorized.')
-    if set(action) != {'type','meeting_id','date','time'}: return audit(action, False, 'Only the date and time may be changed.')
+    if action.get('type') != p['type']: return audit(action, False, 'This action type is not authorized by the permission.')
     if action.get('meeting_id') != p['meeting_id']: return audit(action, False, 'This is not the authorized meeting.')
     meeting = next((m for m in state['meetings'] if m['id'] == p['meeting_id']), None)
     if not meeting or meeting['version'] != p['meeting_version']: return audit(action, False, 'Meeting changed since approval; approve again.')
+    if p['type'] == 'add_attendee':
+        if set(action) != {'type','meeting_id','attendee'}: return audit(action, False, 'Only the approved attendee may be added.')
+        if action.get('attendee') != p['attendee']: return audit(action, False, 'This attendee is not authorized.')
+        if p['attendee'].casefold() in (x.casefold() for x in meeting['attendees']): return audit(action, False, 'Attendee is already on the meeting.')
+        meeting['attendees'].append(p['attendee'])
+        meeting['version'] += 1
+        p['used'] = True
+        return audit(action, True, 'Approved attendee added. Meeting time and other details were preserved.')
+    if set(action) != {'type','meeting_id','date','time'}: return audit(action, False, 'Only the date and time may be changed.')
     try:
         day = date.fromisoformat(action['date'])
         if not valid_time(action['time']): raise ValueError()
@@ -88,6 +108,11 @@ def agent():
     p = state['policy']
     if not p: raise ValueError('Approve a permission first.')
     results = []
+    if p['type'] == 'add_attendee':
+        results.append(gateway({'type':'cancel','meeting_id':p['meeting_id']}))
+        results.append(gateway({'type':'add_attendee','meeting_id':p['meeting_id'],'attendee':p['attendee'] + ' (unapproved)'}))
+        results.append(gateway({'type':'add_attendee','meeting_id':p['meeting_id'],'attendee':p['attendee']}))
+        return results
     results.append(gateway({'type':'add_attendee','meeting_id':p['meeting_id'],'attendee':'Mallory'}))
     start, end = date.fromisoformat(p['start_date']), date.fromisoformat(p['end_date'])
     day = start

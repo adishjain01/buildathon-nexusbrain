@@ -129,9 +129,9 @@ People ask agents to perform a specific task, but the tools agents use may grant
 
 ### What we built
 
-A local calendar simulator, permission review screen, deterministic policy gateway, decision trail, and a small scripted agent. The user chooses one meeting, a date range, allowed weekdays and start times. They review the precise permission before activating it. The gateway permits one matching reschedule for 15 minutes, preserves all other fields, checks for conflicts and stale meeting state, and records allowed and blocked attempts. Reset restores the calendar and revokes the permission.
+A local calendar simulator, permission review screen, deterministic policy gateway, decision trail, and a small scripted agent. The user chooses one meeting and either a reschedule permission with a date range, weekdays and start times, or permission to add one named attendee. They review the precise permission before activating it. The gateway permits one matching action for 15 minutes, preserves other fields, checks stale meeting state and rescheduling conflicts, and records allowed and blocked attempts. Reset restores the calendar and revokes the permission.
 
-The demo agent deliberately tries to add an attendee, tries a disallowed weekday if one exists, and then searches for an available permitted slot. It is a **scripted, deterministic agent**, not an LLM; it makes actual calls to the gateway. The separate `agent.py` uses the gateway HTTP endpoint and has no direct calendar access. The browser's demo button runs the same behavior in the server for convenience.
+For a rescheduling permission, the demo agent tries to add an attendee, tries a disallowed weekday if one exists, then searches for an available permitted slot. For an attendee permission, it tries cancellation and an unapproved attendee before adding the approved person. It is a **scripted, deterministic agent**, not an LLM; it makes actual calls to the gateway. The separate `agent.py` uses the gateway HTTP endpoint and has no direct calendar access. The browser's demo button runs the same behavior in the server for convenience.
 
 ### The hardest part
 
@@ -154,6 +154,7 @@ On Windows, you can instead double-click `intent-lock/start-demo.bat`. Keep the 
 1. Select Project sync with Priya. Choose a date range, then type `only allow rescheduling after 2 PM and never on Friday` and apply it. Review and approve the exact displayed permission.
 2. Click **Run demo agent**. The decision trail shows blocked attempts and a permitted reschedule; the calendar updates.
 3. Reset, approve another permission, and let a judge choose a different target, action or time using **Test an action**. Show the reason it was blocked. A permitted action consumes the permission, so a repeat is blocked.
-4. Use Reset between demos. To change a constraint, review and approve a fresh permission.
+4. To test attendee access, choose **Add attendee** under Permitted action, enter a specific name or email, review and approve. The test action must use the same meeting and exact attendee; alternatively run the demo agent. This only modifies the mock calendar and sends no invitation.
+5. Use Reset between demos. To change a constraint, review and approve a fresh permission.
 
 

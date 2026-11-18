@@ -33,6 +33,24 @@ class GatewayTests(unittest.TestCase):
         self.assertFalse(results[0]['allowed'])
         self.assertTrue(results[-1]['allowed'])
         self.assertGreaterEqual(len(server.state['audit']),3)
+    def test_attendee_permission_is_specific_and_single_use(self):
+        original = server.state['meetings'][0].copy()
+        server.approve({'type':'add_attendee','meeting_id':'m1','attendee':'Taylor'})
+        for action in [dict(type='add_attendee',meeting_id='m1',attendee='Mallory'), dict(type='add_attendee',meeting_id='m2',attendee='Taylor'), dict(type='cancel',meeting_id='m1'), dict(type='add_attendee',meeting_id='m1',attendee='Taylor',date='2026-01-01')]:
+            self.assertFalse(server.gateway(action)['allowed'])
+        good = dict(type='add_attendee',meeting_id='m1',attendee='Taylor')
+        self.assertTrue(server.gateway(good)['allowed'])
+        self.assertFalse(server.gateway(good)['allowed'])
+        self.assertEqual(server.state['meetings'][0]['attendees'], ['you','Priya','Taylor'])
+        self.assertEqual(server.state['meetings'][0]['date'], original['date'])
+    def test_attendee_approval_rejects_existing_and_empty_names(self):
+        for attendee in ['', '  ', 'PRIYA']:
+            with self.assertRaises(ValueError): server.approve({'type':'add_attendee','meeting_id':'m1','attendee':attendee})
+    def test_attendee_agent_uses_gateway(self):
+        server.approve({'type':'add_attendee','meeting_id':'m1','attendee':'Taylor'})
+        results = server.agent()
+        self.assertEqual([r['allowed'] for r in results], [False, False, True])
+
     def test_reject_bad_approval(self):
         for update in [{'days':[]},{'days':[True]},{'earliest':'99:99'},{'end_date':(self.start+timedelta(days=40)).isoformat()}]:
             with self.assertRaises(ValueError): server.approve(self.policy | update)

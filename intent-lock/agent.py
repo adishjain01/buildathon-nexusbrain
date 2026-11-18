@@ -26,6 +26,11 @@ def main():
         print('Approve a fresh permission in the UI first.')
         return
     mid = policy['meeting_id']
+    if policy.get('type') == 'add_attendee':
+        try_action({'type':'cancel','meeting_id':mid})
+        try_action({'type':'add_attendee','meeting_id':mid,'attendee':policy['attendee'] + ' (unapproved)'})
+        try_action({'type':'add_attendee','meeting_id':mid,'attendee':policy['attendee']})
+        return
     try_action({'type':'add_attendee','meeting_id':mid,'attendee':'Mallory'})
     start, end = date.fromisoformat(policy['start_date']), date.fromisoformat(policy['end_date'])
     day = start
