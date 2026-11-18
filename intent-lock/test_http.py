@@ -74,4 +74,35 @@ class HttpDemoTests(unittest.TestCase):
         finally:
             self.request('/api/key', {'key':''})
 
+    def test_security_headers_and_query_string_handling(self):
+        req = Request(self.base + '/app.js?v=123')
+        with urlopen(req, timeout=5) as res:
+            self.assertEqual(res.status, 200)
+            headers = dict(res.headers)
+            self.assertEqual(headers.get('X-Frame-Options'), 'DENY')
+            self.assertEqual(headers.get('X-Content-Type-Options'), 'nosniff')
+            self.assertIn("default-src 'self'", headers.get('Content-Security-Policy', ''))
+
+    def test_dns_rebinding_rejected(self):
+        req_get = Request(self.base + '/api/state', headers={'Host': 'attacker.com'})
+        with self.assertRaises(HTTPError) as err:
+            urlopen(req_get, timeout=5)
+        self.assertEqual(err.exception.code, 403)
+
+        req_post = Request(self.base + '/api/reset', data=b'{}', headers={'Host': 'attacker.com', 'Content-Type': 'application/json'})
+        with self.assertRaises(HTTPError) as err:
+            urlopen(req_post, timeout=5)
+        self.assertEqual(err.exception.code, 403)
+
+    def test_invalid_content_length_and_type_rejected(self):
+        req_type = Request(self.base + '/api/reset', data=b'{}', headers={'Content-Type': 'text/plain'})
+        with self.assertRaises(HTTPError) as err:
+            urlopen(req_type, timeout=5)
+        self.assertEqual(err.exception.code, 400)
+
+        req_neg = Request(self.base + '/api/reset', data=b'{}', headers={'Content-Type': 'application/json', 'Content-Length': '-1'})
+        with self.assertRaises(HTTPError) as err:
+            urlopen(req_neg, timeout=5)
+        self.assertEqual(err.exception.code, 400)
+
 if __name__ == '__main__': unittest.main()

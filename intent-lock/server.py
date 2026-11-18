@@ -174,31 +174,68 @@ def agent(scenario='normal'):
         day += timedelta(days=1)
     return results
 
+def is_allowed_host(host_header):
+    if not host_header:
+        return False
+    host = host_header.split(':')[0].strip().lower()
+    return host in ('127.0.0.1', 'localhost', '[::1]')
+
 class Handler(BaseHTTPRequestHandler):
     def send_json(self, value, status=200):
         data = json.dumps(value).encode()
-        self.send_response(status); self.send_header('Content-Type','application/json'); self.send_header('Content-Length',str(len(data))); self.end_headers(); self.wfile.write(data)
+        self.send_response(status)
+        self.send_header('Content-Type','application/json')
+        self.send_header('Content-Length',str(len(data)))
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('X-Frame-Options', 'DENY')
+        self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'")
+        self.end_headers()
+        self.wfile.write(data)
     def do_GET(self):
-        if urlparse(self.path).path == '/api/state':
+        if not is_allowed_host(self.headers.get('Host', '')):
+            self.send_error(403, 'Forbidden host')
+            return
+        path = urlparse(self.path).path
+        if path == '/api/state':
             with lock: self.send_json({**state, 'openrouter_configured':bool(openrouter_key())})
-        elif self.path in ('/', '/app.js', '/style.css'):
-            name = 'index.html' if self.path == '/' else self.path[1:]
+        elif path in ('/', '/app.js', '/style.css'):
+            name = 'index.html' if path == '/' else path[1:]
             data = (ROOT / 'static' / name).read_bytes()
-            self.send_response(200); self.send_header('Content-Type', {'index.html':'text/html; charset=utf-8','app.js':'text/javascript; charset=utf-8','style.css':'text/css; charset=utf-8'}[name]); self.send_header('Content-Length',str(len(data))); self.end_headers(); self.wfile.write(data)
+            self.send_response(200)
+            self.send_header('Content-Type', {'index.html':'text/html; charset=utf-8','app.js':'text/javascript; charset=utf-8','style.css':'text/css; charset=utf-8'}[name])
+            self.send_header('Content-Length',str(len(data)))
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.send_header('X-Frame-Options', 'DENY')
+            self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'")
+            self.end_headers()
+            self.wfile.write(data)
         else: self.send_error(404)
     def do_POST(self):
         try:
             global session_key
+            if not is_allowed_host(self.headers.get('Host', '')):
+                return self.send_json({'error':'Invalid Host header.'}, 403)
+            sec_fetch = self.headers.get('Sec-Fetch-Site')
+            if sec_fetch in ('cross-site', 'cross-origin'):
+                return self.send_json({'error':'Cross-origin requests are not allowed.'}, 403)
             origin = self.headers.get('Origin')
             if origin and origin != 'http://' + self.headers.get('Host', ''):
                 return self.send_json({'error':'Cross-origin requests are not allowed.'}, 403)
-            size = int(self.headers.get('Content-Length','0'))
-            if size > 10000: raise ValueError('Request too large.')
+            content_type = self.headers.get('Content-Type', '').partition(';')[0].strip()
+            if content_type != 'application/json':
+                return self.send_json({'error':'Content-Type must be application/json.'}, 400)
+            try:
+                size = int(self.headers.get('Content-Length', '0'))
+            except (ValueError, TypeError):
+                return self.send_json({'error':'Invalid Content-Length.'}, 400)
+            if size < 0 or size > 10000:
+                return self.send_json({'error':'Request size must be between 0 and 10000 bytes.'}, 400)
             body = json.loads(self.rfile.read(size) or b'{}')
             if not isinstance(body, dict): raise ValueError('Request must be a JSON object.')
-            if self.path == '/api/interpret':
+            req_path = urlparse(self.path).path
+            if req_path == '/api/interpret':
                 chat_tasks.require_reschedule_bounds(body.get('text'))
-            if self.path == '/api/interpret' and body.get('mode') == 'openrouter':
+            if req_path == '/api/interpret' and body.get('mode') == 'openrouter':
                 key = openrouter_key()
                 if not key: raise ValueError('Add an OpenRouter key in Agent settings first.')
                 text = body.get('text')
@@ -226,14 +263,14 @@ class Handler(BaseHTTPRequestHandler):
                 if checked['type'] == 'reschedule' and (checked['start_date'] != checked['end_date'] or checked['earliest'] != checked['latest']):
                     raise ValueError('What exact date and time should the meeting move to? A date or time range does not specify a single destination.')
                 return self.send_json({**{k:v for k,v in checked.items() if k not in ('id','expires_at','used')}, 'calendar_generation':generation, '_source':source})
-            if self.path == '/api/key':
+            if req_path == '/api/key':
                 if set(body) != {'key'} or not isinstance(body['key'], str) or len(body['key']) > 512 or any(ord(c) < 32 for c in body['key']):
                     raise ValueError('Enter a valid API key.')
                 with lock:
                     session_key = body['key'].strip()
                     self.send_json({'configured':bool(openrouter_key()), 'session_key_set':bool(session_key)})
                 return
-            if self.path == '/api/agent' and body.get('mode') == 'openrouter':
+            if req_path == '/api/agent' and body.get('mode') == 'openrouter':
                 key = openrouter_key()
                 if not key: raise ValueError('OpenRouter key not configured. Use scripted mode or add OPENROUTER_API_KEY to intent-lock/.env.')
                 with lock:
@@ -254,14 +291,14 @@ class Handler(BaseHTTPRequestHandler):
                 result = openrouter_agent.run(key, policy, meetings, execute, scenario=scenario)
                 return self.send_json(result)
             with lock:
-                if self.path == '/api/reset': reset(); result = {'ok':True}
-                elif self.path == '/api/interpret':
+                if req_path == '/api/reset': reset(); result = {'ok':True}
+                elif req_path == '/api/interpret':
                     result = chat_tasks.parse_task(body.get('text'), state['meetings'])
                     result['calendar_generation'] = state['generation']
                     approve(result, preview=True)
-                elif self.path == '/api/approve': result = approve(body)
-                elif self.path == '/api/action': result = gateway(body)
-                elif self.path == '/api/agent':
+                elif req_path == '/api/approve': result = approve(body)
+                elif req_path == '/api/action': result = gateway(body)
+                elif req_path == '/api/agent':
                     if body.get('mode', 'scripted') not in ('scripted', 'auto'): raise ValueError('Unsupported agent mode.')
                     result = agent(body.get('scenario','normal'))
                 else: return self.send_error(404)
