@@ -11,7 +11,7 @@ import time
 from collections import OrderedDict
 from http.cookies import SimpleCookie
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 INTENT_LOCK_DIR = ROOT_DIR / 'intent-lock'
@@ -24,6 +24,13 @@ SESSION_TTL = 30 * 60
 MAX_SESSIONS = 64
 
 class handler(server.Handler):
+    def _restore_rewritten_path(self):
+        parsed=urlparse(self.path)
+        if parsed.path in ('/api/index.py', '/api/index'):
+            route=parse_qs(parsed.query).get('intent_route', [''])[0]
+            if route in ('state', 'interpret', 'approve', 'action', 'agent', 'reset', 'key'):
+                self.path='/api/'+route
+
     def send_json(self, value, status=200):
         if urlparse(self.path).path == '/api/state' and isinstance(value, dict):
             value = {**value, 'hosted_demo': True, 'openrouter_configured': False}
@@ -69,9 +76,11 @@ class handler(server.Handler):
                 server.openrouter_key=original_key
 
     def do_GET(self):
+        self._restore_rewritten_path()
         if urlparse(self.path).path in ('/api','/api/'):
             return self.send_json({'status':'ok','name':'Intent Lock API','mode':'scripted demo'})
         return self._with_session(server.Handler.do_GET)
 
     def do_POST(self):
+        self._restore_rewritten_path()
         return self._with_session(server.Handler.do_POST)

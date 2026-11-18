@@ -42,5 +42,11 @@ class HostedSessionTests(unittest.TestCase):
         with self.assertRaises(HTTPError) as error:
             self.request(self.client(),'/api/key',{'key':'fake-test-key'})
         self.assertEqual(error.exception.code,403)
+    def test_rewritten_vercel_endpoint_restores_original_route(self):
+        client=self.client()
+        state=self.request(client,'/api/index.py?intent_route=state')
+        self.assertTrue(state['hosted_demo'])
+        self.assertEqual(len(state['meetings']),3)
+        self.assertTrue(self.request(client,'/api/index.py?intent_route=reset',{})['ok'])
 
 if __name__=='__main__':unittest.main()
