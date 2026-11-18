@@ -88,6 +88,14 @@ def approve(body, preview=False):
         days = body['days']
         if start > end or (end - start).days > 31 or not isinstance(days, list) or not days or any(type(d) is not int or d not in range(7) for d in days): raise ValueError()
         if not valid_time(body['earliest']) or not valid_time(body['latest']) or body['earliest'] > body['latest']: raise ValueError()
+        cur = start
+        has_matching_day = False
+        while cur <= end:
+            if cur.weekday() in days:
+                has_matching_day = True
+                break
+            cur += timedelta(days=1)
+        if not has_matching_day: raise ValueError()
     except (KeyError, TypeError, ValueError): raise ValueError('Enter a valid date range, time range, and at least one day.')
     # This demonstration uses server-local calendar time and a short-lived capability.
     policy = {'id':str(uuid.uuid4()), 'type':kind, 'meeting_id':meeting['id'], 'meeting_version':meeting['version'], 'start_date':start.isoformat(), 'end_date':end.isoformat(), 'earliest':body['earliest'], 'latest':body['latest'], 'days':sorted(set(days)), 'expires_at':(datetime.now()+timedelta(minutes=15)).isoformat(), 'used':False}

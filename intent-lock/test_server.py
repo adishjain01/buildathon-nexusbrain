@@ -66,7 +66,7 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(len(server.state['audit']), server.MAX_AUDIT_LOGS)
 
     def test_reject_bad_approval(self):
-        for update in [{'days':[]},{'days':[True]},{'earliest':'99:99'},{'end_date':(self.start+timedelta(days=40)).isoformat()}]:
+        for update in [{'days':[]},{'days':[True]},{'earliest':'99:99'},{'end_date':(self.start+timedelta(days=40)).isoformat()},{'days':[6],'end_date':self.start.isoformat()}]:
             with self.assertRaises(ValueError): server.approve(self.policy | update)
 
 if __name__ == '__main__': unittest.main()

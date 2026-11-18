@@ -53,6 +53,13 @@ class ChatTaskTests(unittest.TestCase):
         p['calendar_generation']=server.state['generation']
         server.reset()
         with self.assertRaisesRegex(ValueError, 'reset'): server.approve(p)
+    def test_current_weekday_past_time_rolls_to_next_week(self):
+        from datetime import date, timedelta
+        current_day_name = chat_tasks.DAYS[date.today().weekday()]
+        p = chat_tasks.parse_task(f'reschedule the meeting with Priya {current_day_name} at 1 AM', server.state['meetings'])
+        expected_date = (date.today() + timedelta(days=7)).isoformat()
+        self.assertEqual(p['start_date'], expected_date)
+
     def test_injection_scenario_is_blocked(self):
         p=chat_tasks.parse_task('reschedule the meeting with Priya tomorrow at 4 PM',server.state['meetings'])
         server.approve(p)

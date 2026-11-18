@@ -41,16 +41,20 @@ def parse_task(text, meetings):
     matches=[item for item in meetings if any(a.casefold()==person.casefold() for a in item['attendees'] if a!='you')]
     if len(matches)!=1: raise ValueError('Could not identify exactly one meeting with that person. Try Priya, Alex, or Sam.')
     now=date.today()
-    if day_text=='today': day=now
-    elif day_text=='tomorrow': day=now+timedelta(days=1)
-    elif day_text in DAYS: day=now+timedelta(days=(DAYS.index(day_text)-now.weekday())%7)
-    else:
-        try: day=date.fromisoformat(day_text)
-        except ValueError: raise ValueError('Enter a valid date in YYYY-MM-DD format.')
     hour=int(hour_text); minute=int(minute_text or 0)
     if minute>59 or (meridiem and (hour<1 or hour>12)) or (not meridiem and (minute_text is None or hour>23)):
         raise ValueError('Enter a valid time, such as 3 PM or 15:00.')
     if meridiem: hour=hour%12+(12 if meridiem=='pm' else 0)
     exact_time=f'{hour:02}:{minute:02}'
+    if day_text=='today': day=now
+    elif day_text=='tomorrow': day=now+timedelta(days=1)
+    elif day_text in DAYS:
+        diff=(DAYS.index(day_text)-now.weekday())%7
+        day=now+timedelta(days=diff)
+        if diff==0 and datetime.combine(day, datetime.strptime(exact_time,'%H:%M').time()) <= datetime.now():
+            day += timedelta(days=7)
+    else:
+        try: day=date.fromisoformat(day_text)
+        except ValueError: raise ValueError('Enter a valid date in YYYY-MM-DD format.')
     if datetime.combine(day, datetime.strptime(exact_time,'%H:%M').time()) <= datetime.now(): raise ValueError('That date and time are in the past. Please choose a future slot.')
     return {'type':'reschedule','meeting_id':matches[0]['id'],'meeting_version':matches[0]['version'],'start_date':day.isoformat(),'end_date':day.isoformat(),'earliest':exact_time,'latest':exact_time,'days':[day.weekday()]}
