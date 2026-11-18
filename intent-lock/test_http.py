@@ -1,6 +1,7 @@
 import json
 import threading
 import unittest
+from unittest.mock import patch
 from datetime import date, timedelta
 from http.server import ThreadingHTTPServer
 from urllib.request import Request, urlopen
@@ -48,5 +49,17 @@ class HttpDemoTests(unittest.TestCase):
         finally:
             self.request('/api/key', {'key':''})
         self.assertEqual(server.session_key,'')
+    def test_model_failure_uses_local_fallback_only_for_supported_request(self):
+        self.request('/api/key', {'key':'fake-test-key'})
+        try:
+            with patch('server.openrouter_agent.interpret', side_effect=RuntimeError('Model unavailable')):
+                result=json.loads(self.request('/api/interpret', {'mode':'openrouter','text':'Reschedule the meeting with Priya this week after 2 PM and never Friday'}))
+                self.assertEqual(result['_source'],'local_fallback')
+                self.assertEqual(result['meeting_id'],'m1')
+                with self.assertRaises(HTTPError):
+                    self.request('/api/interpret', {'mode':'openrouter','text':'Add Taylor to the meeting with Priya and remove Priya'})
+            self.assertIsNone(server.state['policy'])
+        finally:
+            self.request('/api/key', {'key':''})
 
 if __name__ == '__main__': unittest.main()

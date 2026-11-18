@@ -2,6 +2,7 @@ import json
 import argparse
 import socket
 import os
+import re
 import threading
 import uuid
 from datetime import date, datetime, timedelta
@@ -190,14 +191,24 @@ class Handler(BaseHTTPRequestHandler):
                 if not key: raise ValueError('Add an OpenRouter key in Agent settings first.')
                 text = body.get('text')
                 if not isinstance(text, str) or not text.strip() or len(text) > 500: raise ValueError('Enter a task of up to 500 characters.')
+                if re.search(r'\b(?:remove|delete|cancel)\b', text, re.IGNORECASE):
+                    raise ValueError('Removing attendees and cancelling meetings are not supported. Ask for one supported action: reschedule a meeting or add an attendee.')
                 with lock: meetings = json.loads(json.dumps(state['meetings']))
-                proposal = openrouter_agent.interpret(key, text, meetings, date.today().isoformat())
+                try:
+                    proposal = openrouter_agent.interpret(key, text, meetings, date.today().isoformat())
+                    source = 'openrouter'
+                except RuntimeError as exc:
+                    try:
+                        proposal = chat_tasks.parse_task(text, meetings)
+                    except ValueError:
+                        raise ValueError(str(exc) + ' The local interpreter could not understand this task; use one of the example phrases.') from exc
+                    source = 'local_fallback'
                 original = next((m for m in meetings if m['id'] == proposal.get('meeting_id')), None)
                 if not original: raise ValueError('The model did not identify a valid meeting; please clarify.')
                 proposal['meeting_version'] = original['version']
                 with lock:
                     checked = approve(proposal, preview=True)
-                return self.send_json({k:v for k,v in checked.items() if k not in ('id','expires_at','used')})
+                return self.send_json({**{k:v for k,v in checked.items() if k not in ('id','expires_at','used')}, '_source':source})
             if self.path == '/api/key':
                 if set(body) != {'key'} or not isinstance(body['key'], str) or len(body['key']) > 512 or any(ord(c) < 32 for c in body['key']):
                     raise ValueError('Enter a valid API key.')

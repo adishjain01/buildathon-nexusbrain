@@ -63,12 +63,23 @@ def interpret(key, text, meetings, today, request_fn=None):
         req=Request('https://openrouter.ai/api/v1/chat/completions',data=json.dumps(payload).encode(),headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'},method='POST')
         try:
             with urlopen(req,timeout=30) as res: response=json.load(res)
-        except HTTPError as e: raise RuntimeError(f'OpenRouter returned HTTP {e.code}; check your key, free-model availability or rate limit.') from e
+        except HTTPError as e:
+            if e.code == 429: raise RuntimeError('OpenRouter free model is rate-limited or temporarily unavailable. Try again later or use scripted mode.') from e
+            raise RuntimeError(f'OpenRouter returned HTTP {e.code}; check your key or use scripted mode.') from e
         except (URLError,TimeoutError,OSError) as e: raise RuntimeError('Could not reach OpenRouter. Check network access or switch to scripted mode.') from e
     try:
-        calls=response['choices'][0]['message']['tool_calls']
-        if len(calls)!=1 or calls[0]['function']['name']!='propose_permission': raise ValueError()
-        proposal=json.loads(calls[0]['function']['arguments'])
+        message=response['choices'][0]['message']
+        calls=message.get('tool_calls') or []
+        if calls:
+            if len(calls)!=1 or calls[0]['function']['name']!='propose_permission': raise ValueError()
+            arguments=calls[0]['function']['arguments']
+            proposal=json.loads(arguments) if isinstance(arguments,str) else arguments
+        else:
+            content=message.get('content')
+            if not isinstance(content,str): raise ValueError()
+            if content.startswith('```') and content.rstrip().endswith('```'):
+                content=content.split('\n',1)[1].rsplit('```',1)[0].strip()
+            proposal=json.loads(content)
         if not isinstance(proposal,dict) or type(proposal.get('supported')) is not bool: raise ValueError()
     except (KeyError,IndexError,TypeError,ValueError) as e: raise RuntimeError('The model did not return a valid permission proposal. Please try again.') from e
     if not proposal['supported']:
