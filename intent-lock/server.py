@@ -57,7 +57,7 @@ def valid_time(value):
     except ValueError:
         return False
 
-def approve(body):
+def approve(body, preview=False):
     meeting = next((m for m in state['meetings'] if m['id'] == body.get('meeting_id')), None)
     if not meeting: raise ValueError('Choose an existing meeting.')
     if 'meeting_version' in body and body['meeting_version'] != meeting['version']:
@@ -71,7 +71,7 @@ def approve(body):
         if attendee.casefold() in (x.casefold() for x in meeting['attendees']):
             raise ValueError('This attendee is already on the meeting.')
         policy = {'id':str(uuid.uuid4()), 'type':kind, 'meeting_id':meeting['id'], 'meeting_version':meeting['version'], 'attendee':attendee, 'expires_at':(datetime.now()+timedelta(minutes=15)).isoformat(), 'used':False}
-        state['policy'] = policy
+        if not preview: state['policy'] = policy
         return policy
     if kind != 'reschedule': raise ValueError('Unsupported permission type.')
     try:
@@ -82,7 +82,7 @@ def approve(body):
     except (KeyError, TypeError, ValueError): raise ValueError('Enter a valid date range, time range, and at least one day.')
     # This demonstration uses server-local calendar time and a short-lived capability.
     policy = {'id':str(uuid.uuid4()), 'type':kind, 'meeting_id':meeting['id'], 'meeting_version':meeting['version'], 'start_date':start.isoformat(), 'end_date':end.isoformat(), 'earliest':body['earliest'], 'latest':body['latest'], 'days':sorted(set(days)), 'expires_at':(datetime.now()+timedelta(minutes=15)).isoformat(), 'used':False}
-    state['policy'] = policy
+    if not preview: state['policy'] = policy
     return policy
 
 def gateway(action):
@@ -185,6 +185,19 @@ class Handler(BaseHTTPRequestHandler):
             size = int(self.headers.get('Content-Length','0'))
             if size > 10000: raise ValueError('Request too large.')
             body = json.loads(self.rfile.read(size) or b'{}')
+            if self.path == '/api/interpret' and body.get('mode') == 'openrouter':
+                key = openrouter_key()
+                if not key: raise ValueError('Add an OpenRouter key in Agent settings first.')
+                text = body.get('text')
+                if not isinstance(text, str) or not text.strip() or len(text) > 500: raise ValueError('Enter a task of up to 500 characters.')
+                with lock: meetings = json.loads(json.dumps(state['meetings']))
+                proposal = openrouter_agent.interpret(key, text, meetings, date.today().isoformat())
+                original = next((m for m in meetings if m['id'] == proposal.get('meeting_id')), None)
+                if not original: raise ValueError('The model did not identify a valid meeting; please clarify.')
+                proposal['meeting_version'] = original['version']
+                with lock:
+                    checked = approve(proposal, preview=True)
+                return self.send_json({k:v for k,v in checked.items() if k not in ('id','expires_at','used')})
             if self.path == '/api/key':
                 if set(body) != {'key'} or not isinstance(body['key'], str) or len(body['key']) > 512 or any(ord(c) < 32 for c in body['key']):
                     raise ValueError('Enter a valid API key.')

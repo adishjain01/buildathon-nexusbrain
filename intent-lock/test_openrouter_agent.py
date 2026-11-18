@@ -25,5 +25,20 @@ class ModelAgentTests(unittest.TestCase):
         self.assertFalse(server.state['policy']['used'])
         self.assertNotIn('Taylor',server.state['meetings'][0]['attendees'])
 
+class IntentInterpretationTests(unittest.TestCase):
+    def response(self, proposal):
+        return {'choices':[{'message':{'tool_calls':[{'function':{'name':'propose_permission','arguments':json.dumps(proposal)}}]}}]}
+    def test_supported_proposal_is_returned_for_review(self):
+        raw={'supported':True,'reason':'','type':'add_attendee','meeting_id':'m1','attendee':'Taylor'}
+        result=openrouter_agent.interpret('unused','invite Taylor',[], '2026-11-18',request_fn=lambda p:self.response(raw))
+        self.assertEqual(result,{'type':'add_attendee','meeting_id':'m1','attendee':'Taylor'})
+    def test_unsupported_combined_request_is_rejected(self):
+        raw={'supported':False,'reason':'Removing an attendee is not supported.'}
+        with self.assertRaisesRegex(ValueError,'Removing'):
+            openrouter_agent.interpret('unused','add Taylor and remove Priya',[], '2026-11-18',request_fn=lambda p:self.response(raw))
+    def test_invalid_proposal_is_rejected(self):
+        with self.assertRaises(ValueError):
+            openrouter_agent.interpret('unused','move a meeting',[], '2026-11-18',request_fn=lambda p:self.response({'supported':True,'reason':'','type':'reschedule','meeting_id':'m1'}))
+
 if __name__=='__main__': unittest.main()
 
