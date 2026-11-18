@@ -1,9 +1,9 @@
 {
-  "team_name": "CHANGE_ME",
+  "team_name": "NexusBrain",
   "project_title": "CHANGE_ME",
   "one_liner": "CHANGE_ME: one sentence about what you're building",
   "track": "CHANGE_ME: physical-world | ai-agents | area-of-expertise",
   "members": [
-    { "name": "CHANGE_ME", "github": "CHANGE_ME" }
+    { "name": "Adish Jain", "github": "adishjain01" }
   ]
 }
