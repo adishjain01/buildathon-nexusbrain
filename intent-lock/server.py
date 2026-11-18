@@ -186,6 +186,8 @@ class Handler(BaseHTTPRequestHandler):
             size = int(self.headers.get('Content-Length','0'))
             if size > 10000: raise ValueError('Request too large.')
             body = json.loads(self.rfile.read(size) or b'{}')
+            if self.path == '/api/interpret':
+                chat_tasks.require_reschedule_bounds(body.get('text'))
             if self.path == '/api/interpret' and body.get('mode') == 'openrouter':
                 key = openrouter_key()
                 if not key: raise ValueError('Add an OpenRouter key in Agent settings first.')
