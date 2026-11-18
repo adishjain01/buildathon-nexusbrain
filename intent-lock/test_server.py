@@ -45,7 +45,7 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(server.state['meetings'][0]['attendees'], ['you','Priya','Taylor'])
         self.assertEqual(server.state['meetings'][0]['date'], original['date'])
     def test_attendee_approval_rejects_existing_and_empty_names(self):
-        for attendee in ['', '  ', 'PRIYA']:
+        for attendee in ['', '  ', 'PRIYA', '<script>', 'Taylor, Alex', 'User\x7f', 'User\u202eReverse']:
             with self.assertRaises(ValueError): server.approve({'type':'add_attendee','meeting_id':'m1','attendee':attendee})
     def test_attendee_agent_uses_gateway(self):
         server.approve({'type':'add_attendee','meeting_id':'m1','attendee':'Taylor'})

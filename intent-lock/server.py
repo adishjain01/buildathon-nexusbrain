@@ -5,6 +5,7 @@ import os
 import re
 import threading
 import uuid
+import unicodedata
 from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -72,7 +73,8 @@ def approve(body, preview=False):
     kind = body.get('type', 'reschedule')
     if kind == 'add_attendee':
         attendee = body.get('attendee')
-        if not isinstance(attendee, str) or not attendee.strip() or len(attendee.strip()) > 100 or any(ord(c) < 32 for c in attendee):
+        if (not isinstance(attendee, str) or not attendee.strip() or len(attendee.strip()) > 100
+                or any(ord(c) < 32 or ord(c) == 127 or unicodedata.category(c) in ('Cc', 'Cf') or c in '<>&",' for c in attendee)):
             raise ValueError('Enter a valid attendee name or email (up to 100 characters).')
         attendee = attendee.strip()
         if attendee.casefold() in (x.casefold() for x in meeting['attendees']):
