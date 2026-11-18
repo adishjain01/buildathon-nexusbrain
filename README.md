@@ -149,7 +149,7 @@ Requires Python 3.10+; no dependencies or API keys.
 python intent-lock/server.py
 ```
 
-On Windows, you can instead double-click `intent-lock/start-demo.bat`. Keep the terminal window open, then open http://127.0.0.1:8000/ in a browser on the same machine. If port 8000 is already in use, run `python intent-lock/server.py --port 8001` and open http://127.0.0.1:8001/. If the server is running in a sandbox or remote environment, its localhost may not be reachable from your desktop browser; run it in a normal local terminal. Run tests with `python -m unittest discover -s intent-lock -v`. To run the independent HTTP agent instead of the browser button, approve a fresh permission and run `python intent-lock/agent.py` in another terminal; refresh the page to see its decision trail.
+On Windows, you can instead double-click `intent-lock/start-demo.bat`. Keep the terminal window open, then open http://127.0.0.1:8000/ in a browser on the same machine. Press **R** in that terminal to restart the server after a code change, or **Q** to stop and exit. Restart resets the mock calendar, permission and session-only key. If port 8000 is already in use, run `python intent-lock/server.py --port 8001` and open http://127.0.0.1:8001/. If the server is running in a sandbox or remote environment, its localhost may not be reachable from your desktop browser; run it in a normal local terminal. Run tests with `python -m unittest discover -s intent-lock -v`. To run the independent HTTP agent instead of the browser button, approve a fresh permission and run `python intent-lock/agent.py` in another terminal; refresh the page to see its decision trail.
 
 ### Optional OpenRouter agent
 

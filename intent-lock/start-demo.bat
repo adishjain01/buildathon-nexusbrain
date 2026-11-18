@@ -6,11 +6,9 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-echo Starting Intent Lock. Open http://127.0.0.1:8000/ in your browser.
-echo Keep this window open while using the demo.
-python server.py
+python run-demo.py %*
 if errorlevel 1 (
   echo.
-  echo The server could not start. Read the error above.
+  echo The launcher could not start. Read the error above.
   pause
 )
