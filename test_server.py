@@ -1,0 +1,40 @@
+import unittest
+from datetime import date, timedelta, datetime
+import server
+
+class GatewayTests(unittest.TestCase):
+    def setUp(self):
+        server.reset()
+        self.start = date.today() - timedelta(days=date.today().weekday())
+        self.policy = {'meeting_id':'m1','start_date':self.start.isoformat(),'end_date':(self.start+timedelta(days=6)).isoformat(),'earliest':'14:00','latest':'17:00','days':[0,1,2,3]}
+        server.approve(self.policy)
+    def action(self, **kw):
+        return dict(type='reschedule',meeting_id='m1',date=self.start.isoformat(),time='14:00',**kw)
+    def test_blocks_wrong_action_meeting_day_and_extra_fields(self):
+        cases = [dict(type='cancel',meeting_id='m1'),dict(type='reschedule',meeting_id='m2',date=self.start.isoformat(),time='14:00'),dict(type='reschedule',meeting_id='m1',date=(self.start+timedelta(days=4)).isoformat(),time='14:00'),self.action(attendees=['you','Mallory'])]
+        for action in cases: self.assertFalse(server.gateway(action)['allowed'])
+        self.assertEqual(server.state['meetings'][0]['version'],1)
+    def test_one_success_and_replay_denied(self):
+        self.assertTrue(server.gateway(self.action())['allowed'])
+        self.assertFalse(server.gateway(self.action())['allowed'])
+        self.assertEqual(server.state['meetings'][0]['attendees'],['you','Priya'])
+    def test_collision_and_stale_version(self):
+        action = dict(type='reschedule',meeting_id='m1',date=(self.start+timedelta(days=3)).isoformat(),time='15:00')
+        self.assertIn('conflicts',server.gateway(action)['reason'])
+        server.state['meetings'][0]['version'] += 1
+        self.assertIn('changed',server.gateway(self.action())['reason'])
+    def test_expiry_and_reset_revoke(self):
+        server.state['policy']['expires_at'] = '2000-01-01T00:00:00'
+        self.assertIn('expired',server.gateway(self.action())['reason'])
+        server.reset()
+        self.assertIn('No active',server.gateway(self.action())['reason'])
+    def test_agent_uses_gateway(self):
+        results=server.agent()
+        self.assertFalse(results[0]['allowed'])
+        self.assertTrue(results[-1]['allowed'])
+        self.assertGreaterEqual(len(server.state['audit']),3)
+    def test_reject_bad_approval(self):
+        for update in [{'days':[]},{'days':[True]},{'earliest':'99:99'},{'end_date':(self.start+timedelta(days=40)).isoformat()}]:
+            with self.assertRaises(ValueError): server.approve(self.policy | update)
+
+if __name__ == '__main__': unittest.main()

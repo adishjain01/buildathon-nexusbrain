@@ -118,11 +118,39 @@ See [RULES.md](RULES.md) for the full list.
 
 ## Your project
 
-_Replace this section with your project README:_
-- **Team:**
-- **Track:**
-- **Problem:** who faces it and why it happens
-- **What we built:** the core workflow
-- **The hardest part:** how we solved it
-- **How to run it:**
-- **Demo / screenshots:**
+**Team:** NexusBrain — Adish Jain ([@adishjain01](https://github.com/adishjain01))  
+**Track:** Build for AI Agents (`ai-agents`)
+
+### The problem
+
+People ask agents to perform a specific task, but the tools agents use may grant broad access to a whole calendar. A prompt alone does not enforce the user's limits, and a successful tool call can make an unintended change. Intent Lock turns a reviewed, task-specific permission into a gateway decision before an agent can write to the mock calendar.
+
+### What we built
+
+A local calendar simulator, permission review screen, deterministic policy gateway, decision trail, and a small scripted agent. The user chooses one meeting, a date range, allowed weekdays and start times. They review the precise permission before activating it. The gateway permits one matching reschedule for 15 minutes, preserves all other fields, checks for conflicts and stale meeting state, and records allowed and blocked attempts. Reset restores the calendar and revokes the permission.
+
+The demo agent deliberately tries to add an attendee, tries a disallowed weekday if one exists, and then searches for an available permitted slot. It is a **scripted, deterministic agent**, not an LLM; it makes actual calls to the gateway. The separate `agent.py` uses the gateway HTTP endpoint and has no direct calendar access. The browser's demo button runs the same behavior in the server for convenience.
+
+### The hardest part
+
+The policy must fail closed: wrong meeting, action type, extra fields, expired or used permission, stale meeting and conflicting slots are rejected before mutation. Policy evaluation and mutation occur under one process lock. We deliberately use structured controls instead of claiming to understand arbitrary natural-language constraints. Times are server-local, start-time bounds are inclusive, and the chosen range is limited to 32 calendar days. The mock calendar has no notification or third-party side effects.
+
+This is a prototype, not production security: there is no authentication, persistence, real calendar integration, or protection against processes that bypass the local server. External services can have hidden side effects, and user review cannot infer unstated preferences. Do not expose this demo server to the internet.
+
+### Run it
+
+Requires Python 3.10+; no dependencies or API keys.
+
+```bash
+python server.py
+```
+
+Open http://127.0.0.1:8000. Run tests with `python -m unittest -v`. To run the independent HTTP agent instead of the browser button, approve a fresh permission and run `python agent.py` in another terminal; refresh the page to see its decision trail.
+
+### Demo
+
+1. Select Project sync with Priya. Choose a date range, weekdays and time window; review and approve the displayed permission.
+2. Click **Run demo agent**. The decision trail shows blocked attempts and a permitted reschedule; the calendar updates.
+3. Reset, approve another permission, and let a judge choose a different target, action or time using **Test an action**. Show the reason it was blocked. A permitted action consumes the permission, so a repeat is blocked.
+4. Use Reset between demos. To change a constraint, review and approve a fresh permission.
+
