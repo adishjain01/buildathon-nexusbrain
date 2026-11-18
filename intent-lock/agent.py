@@ -5,7 +5,7 @@ The agent never has direct access to the calendar store.
 """
 import json
 import argparse
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from urllib.request import Request, urlopen
 
 BASE = 'http://127.0.0.1:8000/api/'
@@ -45,6 +45,7 @@ def main():
             hour, minute = map(int, policy['earliest'].split(':'))
             last_h, last_m = map(int, policy['latest'].split(':'))
             for mins in range(hour*60+minute,last_h*60+last_m+1,30):
+                if datetime.combine(day, time(mins//60, mins%60)) <= datetime.now(): continue
                 result = try_action({'type':'reschedule','meeting_id':mid,'date':day.isoformat(),'time':f'{mins//60:02}:{mins%60:02}'})
                 if result['allowed']: return
                 if 'conflicts' not in result['reason']: return

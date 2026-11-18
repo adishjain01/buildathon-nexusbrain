@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 import openrouter_agent
+import chat_tasks
 
 ROOT = Path(__file__).parent
 lock = threading.RLock()
@@ -59,6 +60,8 @@ def valid_time(value):
 def approve(body):
     meeting = next((m for m in state['meetings'] if m['id'] == body.get('meeting_id')), None)
     if not meeting: raise ValueError('Choose an existing meeting.')
+    if 'meeting_version' in body and body['meeting_version'] != meeting['version']:
+        raise ValueError('The meeting changed since review. Submit your task again.')
     kind = body.get('type', 'reschedule')
     if kind == 'add_attendee':
         attendee = body.get('attendee')
@@ -109,6 +112,7 @@ def gateway(action):
     if day.weekday() not in p['days']: return audit(action, False, 'That day of the week is not approved.')
     if not p['earliest'] <= action['time'] <= p['latest']: return audit(action, False, 'Time is outside the approved window.')
     start = datetime.combine(day, datetime.strptime(action['time'], '%H:%M').time())
+    if start <= datetime.now(): return audit(action, False, 'The proposed time is in the past.')
     end = start + timedelta(minutes=meeting['duration'])
     for other in state['meetings']:
         if other['id'] == meeting['id']: continue
@@ -119,11 +123,18 @@ def gateway(action):
     p['used'] = True
     return audit(action, True, 'Rescheduled. Attendees and meeting details were preserved.')
 
-def agent():
+def agent(scenario='normal'):
     # A deterministic demo agent calls the exact same gateway as manual actions.
     p = state['policy']
     if not p: raise ValueError('Approve a permission first.')
     results = []
+    if scenario not in ('normal','injection','conflict'): raise ValueError('Unknown scenario.')
+    if scenario == 'injection':
+        other = next((m for m in state['meetings'] if m['id'] != p['meeting_id']), None)
+        if other: results.append(gateway({'type':'cancel','meeting_id':other['id']}))
+    if scenario == 'conflict' and p['type'] == 'reschedule':
+        other = next((m for m in state['meetings'] if m['id'] != p['meeting_id']), None)
+        if other: results.append(gateway({'type':'reschedule','meeting_id':p['meeting_id'],'date':other['date'],'time':other['time']}))
     if p['type'] == 'add_attendee':
         results.append(gateway({'type':'cancel','meeting_id':p['meeting_id']}))
         results.append(gateway({'type':'add_attendee','meeting_id':p['meeting_id'],'attendee':p['attendee'] + ' (unapproved)'}))
@@ -143,6 +154,9 @@ def agent():
             t = datetime.strptime(p['earliest'], '%H:%M')
             last = datetime.strptime(p['latest'], '%H:%M')
             while t <= last:
+                if datetime.combine(day, t.time()) <= datetime.now():
+                    t += timedelta(minutes=30)
+                    continue
                 result = gateway({'type':'reschedule','meeting_id':p['meeting_id'],'date':day.isoformat(),'time':t.strftime('%H:%M')})
                 results.append(result)
                 if result['allowed'] or result['reason'] != 'The proposed slot conflicts with another meeting.': return results
@@ -190,15 +204,18 @@ class Handler(BaseHTTPRequestHandler):
                         if not state['policy'] or state['policy']['id'] != policy['id']:
                             return audit(action, False, 'Permission changed during this run; action rejected.')
                         return gateway(action)
-                result = openrouter_agent.run(key, policy, meetings, execute)
+                scenario = body.get('scenario', 'normal')
+                if scenario not in ('normal','injection','conflict'): raise ValueError('Unknown scenario.')
+                result = openrouter_agent.run(key, policy, meetings, execute, scenario=scenario)
                 return self.send_json(result)
             with lock:
                 if self.path == '/api/reset': reset(); result = {'ok':True}
+                elif self.path == '/api/interpret': result = chat_tasks.parse_task(body.get('text'), state['meetings'])
                 elif self.path == '/api/approve': result = approve(body)
                 elif self.path == '/api/action': result = gateway(body)
                 elif self.path == '/api/agent':
                     if body.get('mode', 'scripted') not in ('scripted', 'auto'): raise ValueError('Unsupported agent mode.')
-                    result = agent()
+                    result = agent(body.get('scenario','normal'))
                 else: return self.send_error(404)
                 self.send_json(result)
         except (ValueError, TypeError, json.JSONDecodeError) as e: self.send_json({'error':str(e)},400)

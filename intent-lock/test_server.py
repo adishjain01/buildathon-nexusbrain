@@ -5,7 +5,7 @@ import server
 class GatewayTests(unittest.TestCase):
     def setUp(self):
         server.reset()
-        self.start = date.today() - timedelta(days=date.today().weekday())
+        self.start = date.today() - timedelta(days=date.today().weekday()) + timedelta(days=7)
         self.policy = {'meeting_id':'m1','start_date':self.start.isoformat(),'end_date':(self.start+timedelta(days=6)).isoformat(),'earliest':'14:00','latest':'17:00','days':[0,1,2,3]}
         server.approve(self.policy)
     def action(self, **kw):
@@ -20,6 +20,7 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(server.state['meetings'][0]['attendees'],['you','Priya'])
     def test_collision_and_stale_version(self):
         action = dict(type='reschedule',meeting_id='m1',date=(self.start+timedelta(days=3)).isoformat(),time='15:00')
+        server.state['meetings'][1]['date'] = action['date']
         self.assertIn('conflicts',server.gateway(action)['reason'])
         server.state['meetings'][0]['version'] += 1
         self.assertIn('changed',server.gateway(self.action())['reason'])

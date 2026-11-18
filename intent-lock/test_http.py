@@ -23,7 +23,7 @@ class HttpDemoTests(unittest.TestCase):
         with urlopen(req, timeout=5) as res: return res.read().decode()
     def test_live_http_workflow(self):
         self.assertIn('intent lock', self.request('/'))
-        self.assertIn('apply-constraint', self.request('/app.js'))
+        self.assertIn('task-form', self.request('/app.js'))
         today=date.today(); end=today+timedelta(days=6)
         p={'meeting_id':'m1','start_date':today.isoformat(),'end_date':end.isoformat(),'earliest':'14:01','latest':'17:00','days':[0,1,2,3]}
         self.request('/api/approve',p)
