@@ -135,7 +135,7 @@ For a rescheduling permission, the demo agent tries to add an attendee, tries a 
 
 ### The hardest part
 
-The policy must fail closed: wrong meeting, action type, extra fields, expired or used permission, stale meeting, past times and conflicting slots are rejected before mutation. Policy evaluation and mutation occur under one process lock. Without a key, the local chat parser accepts a small explicit grammar, for example `Reschedule the meeting with Priya this week after 2 PM and never Friday` or `Add Taylor to the meeting with Priya`. Unsupported wording is rejected. In OpenRouter mode, a model interprets a wider range of language and proposes a permission for user review. Models may misunderstand or omit details, so compare the proposal with the entire request. Unsupported actions, including attendee removal, cannot be authorized. A reschedule must specify a date period and a time or time window. The review shows the exact boundaries; 00:00 or 23:59 indicate no additional restriction at that end. Times after a stated time are strict to the minute. The mock calendar sends no invitations or notifications.
+The policy must fail closed: wrong meeting, action type, extra fields, expired or used permission, stale meeting, past times and conflicting slots are rejected before mutation. Policy evaluation and mutation occur under one process lock. Without a key, the local chat parser accepts a small explicit grammar, for example `Reschedule the meeting with Priya tomorrow at 3 PM` or `Add Taylor to the meeting with Priya`. Unsupported wording is rejected. In OpenRouter mode, a model interprets a wider range of language and proposes a permission for user review. Models may misunderstand or omit details, so compare the proposal with the entire request. Unsupported actions, including attendee removal, cannot be authorized. A reschedule requires one exact destination date and time. A period such as “this week” or a time range such as “after 2 PM” is not sufficient; the app asks for the missing information before review. The permitted date and time are identical to the requested destination. The mock calendar sends no invitations or notifications.
 
 The prompt-injection and conflict options are simulations. Scripted mode attempts preselected actions through the gateway, while the model may make different decisions or ignore the injected mock note. This is not evidence of protection against all prompt injection.
 
@@ -157,7 +157,7 @@ Scripted mode works without a key. To enable model mode, enter a key in the app 
 
 ### Demo
 
-1. Choose **Prompt injection** and type `Reschedule the meeting with Priya this week after 2 PM and never Friday` in the chat. Click **Review task**.
+1. Choose **Prompt injection** and type `Reschedule the meeting with Priya tomorrow at 3 PM` in the chat. Click **Review task**.
 2. Check the proposed permission and click **Approve & run agent**. In scripted mode, the injection is a simulated instruction to cancel another meeting. The gateway blocks it and displays the attempted actions and reasons; an allowed future reschedule updates the calendar.
 3. Click **New demo** and try **Calendar conflict** or `Add Taylor to the meeting with Priya`. Review and approve each new permission. The scripted chat parser supports the examples shown in the interface; model mode interprets broader language but requires careful review.
 4. Optional: use **Agent settings** to choose the free OpenRouter model. Model results vary and the injection may not cause a tool call; scripted mode is the repeatable fallback.

@@ -1,16 +1,17 @@
-"""Strict task parser for the chat demo. Unknown language fails closed."""
+"""Strict local interpreter: exact destination required for every reschedule."""
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 DAYS=['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
 
 def require_reschedule_bounds(text):
-    if not isinstance(text, str): raise ValueError('Enter a task.')
-    if not re.search(r'\b(?:reschedule|move)\b', text, re.IGNORECASE): return
-    if not re.search(r'\b(?:this week|next week|today|tomorrow)\b|\b\d{4}-\d{2}-\d{2}\b', text, re.IGNORECASE):
-        raise ValueError('What dates may the meeting move to? Include a period such as “this week” and a time constraint such as “after 2 PM”.')
-    if not re.search(r'\b(?:after|before|at|between)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)\b|\bany time\b', text, re.IGNORECASE):
-        raise ValueError('What time or time window may I use? For example: “Reschedule the meeting with Priya this week after 2 PM”.')
+    if not isinstance(text,str): raise ValueError('Enter a task.')
+    if not re.search(r'\b(?:reschedule|move)\b',text,re.I): return
+    has_date=bool(re.search(r'\b(?:today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|\b\d{4}-\d{2}-\d{2}\b',text,re.I))
+    has_time=bool(re.search(r'\bat\s+(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)|(?:[01]?\d|2[0-3]):[0-5]\d)\b',text,re.I))
+    if not has_date and not has_time: raise ValueError('What exact date and time should the meeting move to? For example: “tomorrow at 3 PM”. A week or a time window alone is not a specific slot.')
+    if not has_date: raise ValueError('What exact date should the meeting move to? Please provide a date or a day such as “tomorrow”.')
+    if not has_time: raise ValueError('What exact time should the meeting move to? Please provide a time such as “at 3 PM”.')
 
 def parse_task(text, meetings):
     if not isinstance(text,str) or len(text)>500: raise ValueError('Enter a short task.')
@@ -22,21 +23,21 @@ def parse_task(text, meetings):
         matches=[m for m in meetings if any(a.casefold()==person.casefold() for a in m['attendees'] if a!='you')]
         if len(matches)!=1: raise ValueError('Could not identify exactly one meeting. Try Priya, Alex, or Sam.')
         return {'type':'add_attendee','meeting_id':matches[0]['id'],'meeting_version':matches[0]['version'],'attendee':attendee.strip()}
-    match=re.fullmatch(r'(?:please )?(?:reschedule|move) (?:the |my )?(?:meeting|meet) with ([a-z][a-z -]*?)(?: (this week))?(?: (?:only )?after (\d{1,2})(?::(\d{2}))?\s*(am|pm))?(?: (?:and )?never (?:on )?(monday|tuesday|wednesday|thursday|friday|saturday|sunday))?',text)
-    if not match: raise ValueError('Try: “Reschedule the meeting with Priya this week after 2 PM and never Friday”. Only this supported wording is accepted; nothing is silently ignored.')
-    person=match.group(1).strip()
-    matches=[m for m in meetings if any(a.casefold()==person.casefold() for a in m['attendees'] if a!='you')]
+    m=re.fullmatch(r'(?:please )?(?:reschedule|move) (?:the |my )?(?:meeting|meet) with ([a-z][a-z -]*?) (?:on )?(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{4}-\d{2}-\d{2}) at (\d{1,2})(?::(\d{2}))?\s*(am|pm)',text)
+    if not m: raise ValueError('Try: “Reschedule the meeting with Priya tomorrow at 3 PM”. Unsupported wording is not silently ignored.')
+    person, day_text, hour_text, minute_text, meridiem=m.groups()
+    matches=[item for item in meetings if any(a.casefold()==person.casefold() for a in item['attendees'] if a!='you')]
     if len(matches)!=1: raise ValueError('Could not identify exactly one meeting with that person. Try Priya, Alex, or Sam.')
-    now=date.today(); end=now+timedelta(days=6-now.weekday())
-    if not match.group(2) or not match.group(3):
-        raise ValueError('Please specify “this week” and a time constraint, such as “after 2 PM”.')
-    earliest='00:00'
-    if match.group(3):
-        hour=int(match.group(3)); minute=int(match.group(4) or 0)
-        if hour<1 or hour>12 or minute>59: raise ValueError('Enter a valid time, such as 2 PM.')
-        minutes=(hour%12+(12 if match.group(5)=='pm' else 0))*60+minute+1
-        if minutes>1439: raise ValueError('That time leaves no available start time.')
-        earliest=f'{minutes//60:02}:{minutes%60:02}'
-    days=list(range(7))
-    if match.group(6): days.remove(DAYS.index(match.group(6)))
-    return {'type':'reschedule','meeting_id':matches[0]['id'],'meeting_version':matches[0]['version'],'start_date':now.isoformat(),'end_date':end.isoformat(),'earliest':earliest,'latest':'23:59','days':days}
+    now=date.today()
+    if day_text=='today': day=now
+    elif day_text=='tomorrow': day=now+timedelta(days=1)
+    elif day_text in DAYS: day=now+timedelta(days=(DAYS.index(day_text)-now.weekday())%7)
+    else:
+        try: day=date.fromisoformat(day_text)
+        except ValueError: raise ValueError('Enter a valid date in YYYY-MM-DD format.')
+    hour=int(hour_text); minute=int(minute_text or 0)
+    if hour<1 or hour>12 or minute>59: raise ValueError('Enter a valid time, such as 3 PM.')
+    hour=hour%12+(12 if meridiem=='pm' else 0)
+    exact_time=f'{hour:02}:{minute:02}'
+    if datetime.combine(day, datetime.strptime(exact_time,'%H:%M').time()) <= datetime.now(): raise ValueError('That date and time are in the past. Please choose a future slot.')
+    return {'type':'reschedule','meeting_id':matches[0]['id'],'meeting_version':matches[0]['version'],'start_date':day.isoformat(),'end_date':day.isoformat(),'earliest':exact_time,'latest':exact_time,'days':[day.weekday()]}

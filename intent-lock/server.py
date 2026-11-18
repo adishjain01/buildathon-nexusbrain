@@ -210,6 +210,8 @@ class Handler(BaseHTTPRequestHandler):
                 proposal['meeting_version'] = original['version']
                 with lock:
                     checked = approve(proposal, preview=True)
+                if checked['type'] == 'reschedule' and (checked['start_date'] != checked['end_date'] or checked['earliest'] != checked['latest']):
+                    raise ValueError('What exact date and time should the meeting move to? A date or time range does not specify a single destination.')
                 return self.send_json({**{k:v for k,v in checked.items() if k not in ('id','expires_at','used')}, '_source':source})
             if self.path == '/api/key':
                 if set(body) != {'key'} or not isinstance(body['key'], str) or len(body['key']) > 512 or any(ord(c) < 32 for c in body['key']):

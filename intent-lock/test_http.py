@@ -53,12 +53,24 @@ class HttpDemoTests(unittest.TestCase):
         self.request('/api/key', {'key':'fake-test-key'})
         try:
             with patch('server.openrouter_agent.interpret', side_effect=RuntimeError('Model unavailable')):
-                result=json.loads(self.request('/api/interpret', {'mode':'openrouter','text':'Reschedule the meeting with Priya this week after 2 PM and never Friday'}))
+                result=json.loads(self.request('/api/interpret', {'mode':'openrouter','text':'Reschedule the meeting with Priya tomorrow at 4 PM'}))
                 self.assertEqual(result['_source'],'local_fallback')
                 self.assertEqual(result['meeting_id'],'m1')
                 with self.assertRaises(HTTPError):
                     self.request('/api/interpret', {'mode':'openrouter','text':'Add Taylor to the meeting with Priya and remove Priya'})
             self.assertIsNone(server.state['policy'])
+        finally:
+            self.request('/api/key', {'key':''})
+    def test_model_mode_asks_for_exact_destination_before_calling_model(self):
+        self.request('/api/key', {'key':'fake-test-key'})
+        try:
+            with patch('server.openrouter_agent.interpret') as model:
+                for text in ['Reschedule the meeting with Priya this week after 2 PM', 'Reschedule the meeting with Priya tomorrow', 'Reschedule the meeting with Priya at 3 PM']:
+                    with self.assertRaises(HTTPError) as error:
+                        self.request('/api/interpret', {'mode':'openrouter','text':text})
+                    self.assertIn('exact', error.exception.read().decode())
+                model.assert_not_called()
+                self.assertIsNone(server.state['policy'])
         finally:
             self.request('/api/key', {'key':''})
 
