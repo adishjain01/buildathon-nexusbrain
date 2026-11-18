@@ -118,6 +118,8 @@ See [RULES.md](RULES.md) for the full list.
 
 ## Your project
 
+**Submission: Working prototype (MVP)** — a running application with real policy checks against a simulated calendar; it is not a production service or a static mockup.
+
 **Team:** NexusBrain — Adish Jain ([@adishjain01](https://github.com/adishjain01))  
 **Track:** Build for AI Agents (`ai-agents`)
 
@@ -133,7 +135,7 @@ The demo agent deliberately tries to add an attendee, tries a disallowed weekday
 
 ### The hardest part
 
-The policy must fail closed: wrong meeting, action type, extra fields, expired or used permission, stale meeting and conflicting slots are rejected before mutation. Policy evaluation and mutation occur under one process lock. We deliberately use structured controls instead of claiming to understand arbitrary natural-language constraints. Times are server-local, start-time bounds are inclusive, and the chosen range is limited to 32 calendar days. The mock calendar has no notification or third-party side effects.
+The policy must fail closed: wrong meeting, action type, extra fields, expired or used permission, stale meeting and conflicting slots are rejected before mutation. Policy evaluation and mutation occur under one process lock. The typed constraint field accepts a small explicit grammar: `after 2 PM`, `before 5 PM`, and `never Friday` (also `never on Friday`), joined with `and`. It rejects unsupported text in full, applies recognized constraints to the structured controls, and requires review before approval; it does not claim to understand arbitrary language. Times are server-local, start-time bounds are inclusive, and the chosen range is limited to 32 calendar days. The mock calendar has no notification or third-party side effects.
 
 This is a prototype, not production security: there is no authentication, persistence, real calendar integration, or protection against processes that bypass the local server. External services can have hidden side effects, and user review cannot infer unstated preferences. Do not expose this demo server to the internet.
 
@@ -149,7 +151,7 @@ Open http://127.0.0.1:8000. Run tests with `python -m unittest discover -s inten
 
 ### Demo
 
-1. Select Project sync with Priya. Choose a date range, weekdays and time window; review and approve the displayed permission.
+1. Select Project sync with Priya. Choose a date range, then type `only allow rescheduling after 2 PM and never on Friday` and apply it. Review and approve the exact displayed permission.
 2. Click **Run demo agent**. The decision trail shows blocked attempts and a permitted reschedule; the calendar updates.
 3. Reset, approve another permission, and let a judge choose a different target, action or time using **Test an action**. Show the reason it was blocked. A permitted action consumes the permission, so a repeat is blocked.
 4. Use Reset between demos. To change a constraint, review and approve a fresh permission.

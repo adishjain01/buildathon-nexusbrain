@@ -15,8 +15,33 @@ async function refresh(){
  $('audit').innerHTML=state.audit.length?state.audit.map(a=>`<div class="entry"><div class="decision ${a.allowed?'allow':'deny'}">${a.allowed?'✓':'×'}</div><div><b>${a.allowed?'ALLOWED':'BLOCKED'} <span>${esc(a.action.type||'unknown').replaceAll('_',' ')}</span></b><p>${esc(a.reason)}</p><small>${esc(a.action.meeting_id||'')} ${esc(a.action.date||'')} ${esc(a.action.time||'')} · ${esc(a.at)}</small></div></div>`).join(''):'<div class="empty">No actions yet.<br><small>Gateway decisions will appear here.</small></div>';
 }
 function form(){return {meeting_id:$('meeting').value,start_date:$('start').value,end_date:$('end').value,earliest:$('earliest').value,latest:$('latest').value,days:[...document.querySelectorAll('#days input:checked')].map(x=>Number(x.value))}}
+// Parse the entire supported expression; unrecognized text never changes the form.
+$('apply-constraint').onclick=()=>{
+ const raw=$('constraint').value.trim().toLowerCase();
+ const parts=raw.split(/\s+and\s+/); let earliest=$('earliest').value, latest=$('latest').value;
+ const days=[...document.querySelectorAll('#days input')].map(x=>x.checked);
+ const weekdays=['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+ try {
+  if(!raw) throw Error('Enter a constraint first.');
+  for(let part of parts){
+   part=part.replace(/^only allow rescheduling\s+/, '').replace(/^only\s+/, '').trim();
+   let m=part.match(/^never (?:on )?(monday|tuesday|wednesday|thursday|friday|saturday|sunday)s?$/);
+   if(m){days[weekdays.indexOf(m[1])]=false;continue;}
+   m=part.match(/^(after|before) (\d{1,2})(?::(\d{2}))?\s*(am|pm)$/);
+   if(!m) throw Error('Unsupported constraint. Use “after 2 PM” or “never Friday”, joined with “and”.');
+   let hour=Number(m[2]), min=Number(m[3]||0); if(hour<1||hour>12||min>59) throw Error('Enter a valid 12-hour time.');
+   let value=(hour%12+(m[4]==='pm'?12:0))*60+min+(m[1]==='after'?1:-1);
+   if(value<0||value>1439) throw Error('That time leaves no valid start time.');
+   let time=String(Math.floor(value/60)).padStart(2,'0')+':'+String(value%60).padStart(2,'0');
+   if(m[1]==='after') earliest=earliest>time?earliest:time; else latest=latest<time?latest:time;
+  }
+  if(!days.some(Boolean)||earliest>latest) throw Error('Those constraints leave no allowed days or times.');
+  $('earliest').value=earliest; $('latest').value=latest; document.querySelectorAll('#days input').forEach((x,i)=>x.checked=days[i]);
+  $('preview').hidden=true; pending=null; toast('Constraint applied. Review the exact permission below.');
+ } catch(e){toast(e.message)}
+};
 $('review').onclick=()=>{const p=form(), m=state.meetings.find(x=>x.id===p.meeting_id); if(!m||!p.start_date||!p.end_date||p.end_date<p.start_date||!p.earliest||!p.latest||p.earliest>p.latest||!p.days.length){toast('Complete a valid permission first.');return} pending=p; $('summary').innerHTML=`<b>${esc(m.title)} · ${esc(m.attendees.join(', '))}</b><p>Move once from ${esc(p.start_date)} through ${esc(p.end_date)}, on ${p.days.map(d=>names[d]).join(', ')}, with a start time between ${esc(p.earliest)} and ${esc(p.latest)}. Preserve all other details.</p>`; $('preview').hidden=false; $('preview').scrollIntoView({behavior:'smooth',block:'nearest'});};
-document.querySelector('.permission').addEventListener('change',e=>{if(e.target.matches('input,select')){$('preview').hidden=true; pending=null}});
+document.querySelector('.permission').addEventListener('input',e=>{if(e.target.matches('input,select')){$('preview').hidden=true; pending=null}});
 $('approve').onclick=async()=>{try{await api('approve',pending); $('preview').hidden=true; pending=null; await refresh();toast('Permission activated for 15 minutes.')}catch(e){toast(e.message)}};
 $('run').onclick=async()=>{try{await api('agent');await refresh();toast('Demo agent finished. Inspect the decision trail.')}catch(e){toast(e.message)}};
 $('test').onclick=async()=>{try{let type=$('action').value, a={type,meeting_id:$('target').value};if(type==='reschedule')Object.assign(a,{date:$('action-date').value,time:$('action-time').value});if(type==='add_attendee')a.attendee='Mallory';let result=await api('action',a);await refresh();toast((result.allowed?'Allowed: ':'Blocked: ')+result.reason)}catch(e){toast(e.message)}};
