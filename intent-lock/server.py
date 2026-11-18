@@ -16,10 +16,12 @@ ROOT = Path(__file__).parent
 lock = threading.RLock()
 state = {}
 session_key = ''
+MAX_AUDIT_LOGS = 200
 
 def openrouter_key():
-    if session_key:
-        return session_key
+    with lock:
+        if session_key:
+            return session_key
     key = os.environ.get('OPENROUTER_API_KEY', '').strip()
     path = ROOT / '.env'
     if not key and path.is_file():
@@ -50,6 +52,8 @@ def reset():
 
 def audit(action, allowed, reason):
     state['audit'].insert(0, {'action': action, 'allowed': allowed, 'reason': reason, 'at':datetime.now().strftime('%H:%M:%S')})
+    if len(state['audit']) > MAX_AUDIT_LOGS:
+        state['audit'].pop()
     return {'allowed':allowed, 'reason':reason}
 
 def valid_time(value):
@@ -197,7 +201,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         path = urlparse(self.path).path
         if path == '/api/state':
-            with lock: self.send_json({**state, 'openrouter_configured':bool(openrouter_key())})
+            with lock: snapshot = {**state, 'openrouter_configured':bool(openrouter_key())}
+            self.send_json(snapshot)
         elif path in ('/', '/app.js', '/style.css'):
             name = 'index.html' if path == '/' else path[1:]
             data = (ROOT / 'static' / name).read_bytes()
@@ -251,6 +256,8 @@ class Handler(BaseHTTPRequestHandler):
                 except RuntimeError as exc:
                     try:
                         proposal = chat_tasks.parse_task(text, meetings)
+                    except chat_tasks.NeedsClarification:
+                        raise
                     except ValueError:
                         raise ValueError(str(exc) + ' The local interpreter could not understand this task; use one of the example phrases.') from exc
                     source = 'local_fallback'
@@ -268,7 +275,8 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError('Enter a valid API key.')
                 with lock:
                     session_key = body['key'].strip()
-                    self.send_json({'configured':bool(openrouter_key()), 'session_key_set':bool(session_key)})
+                    res_data = {'configured':bool(openrouter_key()), 'session_key_set':bool(session_key)}
+                self.send_json(res_data)
                 return
             if req_path == '/api/agent' and body.get('mode') == 'openrouter':
                 key = openrouter_key()
@@ -302,7 +310,7 @@ class Handler(BaseHTTPRequestHandler):
                     if body.get('mode', 'scripted') not in ('scripted', 'auto'): raise ValueError('Unsupported agent mode.')
                     result = agent(body.get('scenario','normal'))
                 else: return self.send_error(404)
-                self.send_json(result)
+            self.send_json(result)
         except chat_tasks.NeedsClarification as e: self.send_json({'error':str(e), 'needs_clarification':True},400)
         except (ValueError, TypeError, json.JSONDecodeError) as e: self.send_json({'error':str(e)},400)
         except RuntimeError as e: self.send_json({'error':str(e)},502)

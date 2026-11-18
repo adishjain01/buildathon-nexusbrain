@@ -60,6 +60,11 @@ class GatewayTests(unittest.TestCase):
     def test_normal_agent_does_not_fake_unauthorized_attempts(self):
         results=server.agent('normal')
         self.assertEqual([r['allowed'] for r in results], [True])
+    def test_audit_log_is_capped_at_max_limit(self):
+        for i in range(server.MAX_AUDIT_LOGS + 50):
+            server.audit({'type':'reschedule','iteration':i}, False, 'testing limit')
+        self.assertEqual(len(server.state['audit']), server.MAX_AUDIT_LOGS)
+
     def test_reject_bad_approval(self):
         for update in [{'days':[]},{'days':[True]},{'earliest':'99:99'},{'end_date':(self.start+timedelta(days=40)).isoformat()}]:
             with self.assertRaises(ValueError): server.approve(self.policy | update)
