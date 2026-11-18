@@ -123,6 +123,8 @@ See [RULES.md](RULES.md) for the full list.
 **Team:** NexusBrain — Adish Jain ([@adishjain01](https://github.com/adishjain01))  
 **Track:** Build for AI Agents (`ai-agents`)
 
+**Live demo:** [Launch Intent Lock](https://buildathon-nexusbrain.vercel.app/) — a scripted mock-calendar prototype; no real calendar changes are made.
+
 ### The problem
 
 People ask agents to perform a specific task, but the tools agents use may grant broad access to a whole calendar. A prompt alone does not enforce the user's limits, and a successful tool call can make an unintended change. Intent Lock turns a reviewed, task-specific permission into a gateway decision before an agent can write to the mock calendar.
