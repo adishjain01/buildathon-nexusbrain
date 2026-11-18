@@ -1,5 +1,6 @@
 import json
 import argparse
+import socket
 import threading
 import uuid
 from datetime import date, datetime, timedelta
@@ -10,6 +11,15 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).parent
 lock = threading.RLock()
 state = {}
+
+class DemoServer(ThreadingHTTPServer):
+    def server_bind(self):
+        # Windows SO_REUSEADDR allows competing listeners on the same port.
+        # Exclusive binding fails clearly instead of routing requests unpredictably.
+        if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
+            self.allow_reuse_address = False
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
 
 def reset():
     today = date.today()
@@ -133,7 +143,7 @@ if __name__ == '__main__':
         parser.error('port must be between 1 and 65535')
     reset()
     try:
-        httpd = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
+        httpd = DemoServer(('127.0.0.1', args.port), Handler)
     except OSError as exc:
         print(f'Could not start on port {args.port}: {exc}. Try --port 8001.', flush=True)
         raise SystemExit(1)
