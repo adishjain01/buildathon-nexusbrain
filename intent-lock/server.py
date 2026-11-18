@@ -55,7 +55,7 @@ def audit(action, allowed, reason):
     state['audit'].insert(0, {'action': action, 'allowed': allowed, 'reason': reason, 'at':datetime.now().strftime('%H:%M:%S')})
     if len(state['audit']) > MAX_AUDIT_LOGS:
         state['audit'].pop()
-    return {'allowed':allowed, 'reason':reason}
+    return {'allowed':allowed, 'reason':reason, 'action':action}
 
 def valid_time(value):
     try:
