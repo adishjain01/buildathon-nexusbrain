@@ -1,16 +1,29 @@
 import json
 import argparse
 import socket
+import os
 import threading
 import uuid
 from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
+import openrouter_agent
 
 ROOT = Path(__file__).parent
 lock = threading.RLock()
 state = {}
+
+def openrouter_key():
+    key = os.environ.get('OPENROUTER_API_KEY', '').strip()
+    path = ROOT / '.env'
+    if not key and path.is_file():
+        for line in path.read_text(encoding='utf-8-sig').splitlines():
+            name, separator, value = line.partition('=')
+            if separator and name.strip() == 'OPENROUTER_API_KEY':
+                key = value.strip().strip('"\'')
+                break
+    return key
 
 class DemoServer(ThreadingHTTPServer):
     def server_bind(self):
@@ -140,7 +153,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status); self.send_header('Content-Type','application/json'); self.send_header('Content-Length',str(len(data))); self.end_headers(); self.wfile.write(data)
     def do_GET(self):
         if urlparse(self.path).path == '/api/state':
-            with lock: self.send_json(state)
+            with lock: self.send_json({**state, 'openrouter_configured':bool(openrouter_key())})
         elif self.path in ('/', '/app.js', '/style.css'):
             name = 'index.html' if self.path == '/' else self.path[1:]
             data = (ROOT / 'static' / name).read_bytes()
@@ -151,14 +164,31 @@ class Handler(BaseHTTPRequestHandler):
             size = int(self.headers.get('Content-Length','0'))
             if size > 10000: raise ValueError('Request too large.')
             body = json.loads(self.rfile.read(size) or b'{}')
+            if self.path == '/api/agent' and body.get('mode') == 'openrouter':
+                key = openrouter_key()
+                if not key: raise ValueError('OpenRouter key not configured. Use scripted mode or add OPENROUTER_API_KEY to intent-lock/.env.')
+                with lock:
+                    policy = dict(state['policy']) if state['policy'] else None
+                    meetings = json.loads(json.dumps(state['meetings']))
+                if not policy or policy['used']: raise ValueError('Approve a fresh permission first.')
+                def execute(action):
+                    with lock:
+                        if not state['policy'] or state['policy']['id'] != policy['id']:
+                            return audit(action, False, 'Permission changed during this run; action rejected.')
+                        return gateway(action)
+                result = openrouter_agent.run(key, policy, meetings, execute)
+                return self.send_json(result)
             with lock:
                 if self.path == '/api/reset': reset(); result = {'ok':True}
                 elif self.path == '/api/approve': result = approve(body)
                 elif self.path == '/api/action': result = gateway(body)
-                elif self.path == '/api/agent': result = agent()
+                elif self.path == '/api/agent':
+                    if body.get('mode', 'scripted') not in ('scripted', 'auto'): raise ValueError('Unsupported agent mode.')
+                    result = agent()
                 else: return self.send_error(404)
                 self.send_json(result)
         except (ValueError, TypeError, json.JSONDecodeError) as e: self.send_json({'error':str(e)},400)
+        except RuntimeError as e: self.send_json({'error':str(e)},502)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run the Intent Lock local demo')

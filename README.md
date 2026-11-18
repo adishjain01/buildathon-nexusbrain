@@ -129,9 +129,9 @@ People ask agents to perform a specific task, but the tools agents use may grant
 
 ### What we built
 
-A local calendar simulator, permission review screen, deterministic policy gateway, decision trail, and a small scripted agent. The user chooses one meeting and either a reschedule permission with a date range, weekdays and start times, or permission to add one named attendee. They review the precise permission before activating it. The gateway permits one matching action for 15 minutes, preserves other fields, checks stale meeting state and rescheduling conflicts, and records allowed and blocked attempts. Reset restores the calendar and revokes the permission.
+A local calendar simulator, permission review screen, deterministic policy gateway, decision trail, and a choice of scripted or OpenRouter-powered agent. The user chooses one meeting and either a reschedule permission with a date range, weekdays and start times, or permission to add one named attendee. They review the precise permission before activating it. The gateway permits one matching action for 15 minutes, preserves other fields, checks stale meeting state and rescheduling conflicts, and records allowed and blocked attempts. Reset restores the calendar and revokes the permission.
 
-For a rescheduling permission, the demo agent tries to add an attendee, tries a disallowed weekday if one exists, then searches for an available permitted slot. For an attendee permission, it tries cancellation and an unapproved attendee before adding the approved person. It is a **scripted, deterministic agent**, not an LLM; it makes actual calls to the gateway. The separate `agent.py` uses the gateway HTTP endpoint and has no direct calendar access. The browser's demo button runs the same behavior in the server for convenience.
+For a rescheduling permission, the demo agent tries to add an attendee, tries a disallowed weekday if one exists, then searches for an available permitted slot. For an attendee permission, it tries cancellation and an unapproved attendee before adding the approved person. Scripted mode is deterministic and uses the gateway. Optional OpenRouter mode uses a free model to choose tool calls; every proposed action still passes through the same deterministic gateway. The model may behave differently on each run, including choosing no action. The separate `agent.py` uses the gateway HTTP endpoint and has no direct calendar access. The browser offers both modes; the separate script uses the repeatable scripted behavior.
 
 ### The hardest part
 
@@ -148,6 +148,10 @@ python intent-lock/server.py
 ```
 
 On Windows, you can instead double-click `intent-lock/start-demo.bat`. Keep the terminal window open, then open http://127.0.0.1:8000/ in a browser on the same machine. If port 8000 is already in use, run `python intent-lock/server.py --port 8001` and open http://127.0.0.1:8001/. If the server is running in a sandbox or remote environment, its localhost may not be reachable from your desktop browser; run it in a normal local terminal. Run tests with `python -m unittest discover -s intent-lock -v`. To run the independent HTTP agent instead of the browser button, approve a fresh permission and run `python intent-lock/agent.py` in another terminal; refresh the page to see its decision trail.
+
+### Optional OpenRouter agent
+
+Scripted mode works without a key. To enable model mode, copy `intent-lock/.env.example` to `intent-lock/.env`, add your own `OPENROUTER_API_KEY`, and restart the server. The key stays server-side and `.env` is ignored by Git. Select **OpenRouter free model** in the UI after approving a permission. Only use the seeded mock calendar: the selected permission and mock meeting data are sent to OpenRouter and its model provider. The model routes through `openrouter/free`; availability and rate limits can vary. If a model run fails, inspect the audit trail before retrying, since an action may have already succeeded. You can select scripted mode for a repeatable fallback.
 
 ### Demo
 
