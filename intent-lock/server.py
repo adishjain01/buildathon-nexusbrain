@@ -236,7 +236,13 @@ class Handler(BaseHTTPRequestHandler):
             origin = self.headers.get('Origin')
             if origin:
                 host_val = self.headers.get('Host', '')
-                if origin not in (f"http://{host_val}", f"https://{host_val}"):
+                fwd_host = self.headers.get('X-Forwarded-Host', '')
+                allowed_origins = {f"http://{host_val}", f"https://{host_val}"}
+                if fwd_host:
+                    allowed_origins.update({f"http://{fwd_host}", f"https://{fwd_host}"})
+                parsed_origin = urlparse(origin).netloc.split(':')[0].lower()
+                is_vercel = bool(os.environ.get('VERCEL')) and (parsed_origin.endswith('.vercel.app') or parsed_origin == host_val or parsed_origin == fwd_host)
+                if origin not in allowed_origins and not is_vercel:
                     return self.send_json({'error':'Cross-origin requests are not allowed.'}, 403)
             content_type = self.headers.get('Content-Type', '').partition(';')[0].strip()
             if content_type != 'application/json':

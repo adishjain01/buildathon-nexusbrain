@@ -1,0 +1,1 @@
+# Intent Lock uses standard library modules only (http.server, json, urllib, etc.)
