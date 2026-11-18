@@ -30,6 +30,8 @@ def run(key, policy, meetings, execute, request_fn=None, scenario='normal'):
                 raise RuntimeError(f'OpenRouter returned HTTP {e.code}; check your key, free-model availability or rate limit.') from e
             except (URLError,TimeoutError,OSError) as e:
                 raise RuntimeError('Could not reach OpenRouter. Check network access and try scripted mode.') from e
+            except (json.JSONDecodeError, ValueError) as e:
+                raise RuntimeError('OpenRouter returned an unparseable response; switch to scripted mode or try again.') from e
         try:
             message=response['choices'][0]['message']
             calls=message.get('tool_calls') or []
@@ -41,17 +43,21 @@ def run(key, policy, meetings, execute, request_fn=None, scenario='normal'):
         messages.append(message)
         for call in calls:
             try:
-                if call['function']['name'] != 'calendar_action': raise ValueError('Unknown tool')
-                action=json.loads(call['function']['arguments'])
-                if not isinstance(action,dict): raise ValueError('Invalid arguments')
-            except (KeyError,TypeError,ValueError):
-                result={'allowed':False,'reason':'Invalid tool call arguments.'}
+                if not isinstance(call, dict) or not isinstance(call.get('function'), dict):
+                    raise ValueError('Invalid tool call structure.')
+                if call['function'].get('name') != 'calendar_action': raise ValueError('Unknown tool')
+                arguments = call['function'].get('arguments')
+                action = json.loads(arguments) if isinstance(arguments, str) else arguments
+                if not isinstance(action, dict): raise ValueError('Invalid arguments')
+            except (KeyError, TypeError, ValueError):
+                result = {'allowed': False, 'reason': 'Invalid tool call arguments.'}
             else:
-                result=execute(action)
+                result = execute(action)
             results.append(result)
-            messages.append({'role':'tool','tool_call_id':call.get('id',''),'content':json.dumps(result)})
+            tool_id = str((call.get('id') if isinstance(call, dict) else None) or '')
+            messages.append({'role': 'tool', 'tool_call_id': tool_id, 'content': json.dumps(result)})
             if result.get('allowed'):
-                return {'mode':'openrouter','results':results,'message':'The gateway allowed an action; the agent stopped.'}
+                return {'mode': 'openrouter', 'results': results, 'message': 'The gateway allowed an action; the agent stopped.'}
     return {'mode':'openrouter','results':results,'message':'Agent stopped after four model turns.'}
 
 def interpret(key, text, meetings, today, request_fn=None):
@@ -68,6 +74,7 @@ def interpret(key, text, meetings, today, request_fn=None):
             if e.code == 429: raise RuntimeError('OpenRouter free model is rate-limited or temporarily unavailable. Try again later or use scripted mode.') from e
             raise RuntimeError(f'OpenRouter returned HTTP {e.code}; check your key or use scripted mode.') from e
         except (URLError,TimeoutError,OSError) as e: raise RuntimeError('Could not reach OpenRouter. Check network access or switch to scripted mode.') from e
+        except (json.JSONDecodeError, ValueError) as e: raise RuntimeError('OpenRouter returned an unparseable response; switch to scripted mode or try again.') from e
     try:
         message=response['choices'][0]['message']
         calls=message.get('tool_calls') or []
@@ -78,7 +85,8 @@ def interpret(key, text, meetings, today, request_fn=None):
         else:
             content=message.get('content')
             if not isinstance(content,str): raise ValueError()
-            if content.startswith('```') and content.rstrip().endswith('```'):
+            content=content.strip()
+            if content.startswith('```') and content.endswith('```'):
                 content=content.split('\n',1)[1].rsplit('```',1)[0].strip()
             proposal=json.loads(content)
         if not isinstance(proposal,dict) or type(proposal.get('supported')) is not bool: raise ValueError()

@@ -25,12 +25,30 @@ class ModelAgentTests(unittest.TestCase):
         self.assertFalse(server.state['policy']['used'])
         self.assertNotIn('Taylor',server.state['meetings'][0]['attendees'])
 
+    def test_malformed_tool_call_structure_handled_gracefully(self):
+        called = False
+        def fake(payload):
+            nonlocal called
+            if not called:
+                called = True
+                return {'choices':[{'message':{'role':'assistant','content':None,'tool_calls':['not-a-dict', {'function':'not-a-dict'}, {'function':{'name':'unknown_tool','arguments':'{}'}}]}}]}
+            return {'choices':[{'message':{'role':'assistant','content':'done'}}]}
+        result=openrouter_agent.run('unused',self.policy,server.state['meetings'],server.gateway,request_fn=fake)
+        self.assertEqual(len(result['results']), 3)
+        self.assertTrue(all(not r['allowed'] for r in result['results']))
+
 class IntentInterpretationTests(unittest.TestCase):
     def response(self, proposal):
         return {'choices':[{'message':{'tool_calls':[{'function':{'name':'propose_permission','arguments':json.dumps(proposal)}}]}}]}
     def test_supported_proposal_is_returned_for_review(self):
         raw={'supported':True,'reason':'','type':'add_attendee','meeting_id':'m1','attendee':'Taylor'}
         result=openrouter_agent.interpret('unused','invite Taylor',[], '2026-11-18',request_fn=lambda p:self.response(raw))
+        self.assertEqual(result,{'type':'add_attendee','meeting_id':'m1','attendee':'Taylor'})
+
+    def test_markdown_fenced_proposal_with_whitespace_parsed(self):
+        raw={'supported':True,'reason':'','type':'add_attendee','meeting_id':'m1','attendee':'Taylor'}
+        fenced=f"   \n```json\n{json.dumps(raw)}\n```\n  "
+        result=openrouter_agent.interpret('unused','invite Taylor',[], '2026-11-18',request_fn=lambda p:{'choices':[{'message':{'content':fenced}}]})
         self.assertEqual(result,{'type':'add_attendee','meeting_id':'m1','attendee':'Taylor'})
     def test_unsupported_combined_request_is_rejected(self):
         raw={'supported':False,'reason':'Removing an attendee is not supported.'}
