@@ -2,6 +2,7 @@
 import json
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
+from chat_tasks import NeedsClarification
 
 TOOL = {'type':'function','function':{'name':'calendar_action','description':'Propose a calendar action. The gateway independently allows or blocks it.','parameters':{'type':'object','properties':{'type':{'type':'string','enum':['reschedule','add_attendee','cancel']},'meeting_id':{'type':'string'},'date':{'type':'string','description':'YYYY-MM-DD, for reschedule'},'time':{'type':'string','description':'HH:MM, for reschedule'},'attendee':{'type':'string','description':'Name or email, for add_attendee'}},'required':['type','meeting_id']}}}
 
@@ -84,6 +85,8 @@ def interpret(key, text, meetings, today, request_fn=None):
     except (KeyError,IndexError,TypeError,ValueError) as e: raise RuntimeError('The model did not return a valid permission proposal. Please try again.') from e
     if not proposal['supported']:
         reason=proposal.get('reason')
+        if proposal.get('missing_fields'):
+            raise NeedsClarification(reason[:300] if isinstance(reason,str) and reason else 'What information is missing from this task?')
         raise ValueError('Cannot create a permission: '+(reason[:300] if isinstance(reason,str) and reason else 'the request is unsupported or ambiguous.'))
     kind=proposal.get('type')
     if kind=='reschedule': fields=('type','meeting_id','start_date','end_date','earliest','latest','days')

@@ -46,7 +46,7 @@ def reset():
     state.update(meetings=[
         {'id':'m1','title':'Project sync','attendees':['you','Priya'],'date':(monday+timedelta(days=2)).isoformat(),'time':'10:00','duration':30,'version':1},
         {'id':'m2','title':'Design review','attendees':['you','Alex'],'date':(monday+timedelta(days=3)).isoformat(),'time':'15:00','duration':30,'version':1},
-        {'id':'m3','title':'Team standup','attendees':['you','Sam'],'date':(monday+timedelta(days=4)).isoformat(),'time':'11:00','duration':30,'version':1}], policy=None, audit=[])
+        {'id':'m3','title':'Team standup','attendees':['you','Sam'],'date':(monday+timedelta(days=4)).isoformat(),'time':'11:00','duration':30,'version':1}], policy=None, audit=[], generation=str(uuid.uuid4()))
 
 def audit(action, allowed, reason):
     state['audit'].insert(0, {'action': action, 'allowed': allowed, 'reason': reason, 'at':datetime.now().strftime('%H:%M:%S')})
@@ -59,6 +59,8 @@ def valid_time(value):
         return False
 
 def approve(body, preview=False):
+    if 'calendar_generation' in body and body['calendar_generation'] != state['generation']:
+        raise ValueError('The calendar was reset since review. Submit your task again.')
     meeting = next((m for m in state['meetings'] if m['id'] == body.get('meeting_id')), None)
     if not meeting: raise ValueError('Choose an existing meeting.')
     if 'meeting_version' in body and body['meeting_version'] != meeting['version']:
@@ -86,7 +88,7 @@ def approve(body, preview=False):
     if not preview: state['policy'] = policy
     return policy
 
-def gateway(action):
+def gateway(action, simulated_conflict=False):
     p = state['policy']
     if not isinstance(action, dict): return audit({}, False, 'Malformed action.')
     if not p: return audit(action, False, 'No active approved permission.')
@@ -119,7 +121,9 @@ def gateway(action):
         if other['id'] == meeting['id']: continue
         other_start = datetime.fromisoformat(other['date'] + 'T' + other['time'])
         if start < other_start + timedelta(minutes=other['duration']) and end > other_start:
-            return audit(action, False, 'The proposed slot conflicts with another meeting.')
+            return audit(action, False, f"The proposed slot conflicts with {other['title']} ({other['date']} {other['time']}).")
+    if simulated_conflict:
+        return audit(action, False, 'Simulated conflict: the approved slot is temporarily occupied. No meeting was changed.')
     meeting.update(date=day.isoformat(), time=action['time'], version=meeting['version']+1)
     p['used'] = True
     return audit(action, True, 'Rescheduled. Attendees and meeting details were preserved.')
@@ -133,22 +137,22 @@ def agent(scenario='normal'):
     if scenario == 'injection':
         other = next((m for m in state['meetings'] if m['id'] != p['meeting_id']), None)
         if other: results.append(gateway({'type':'cancel','meeting_id':other['id']}))
-    if scenario == 'conflict' and p['type'] == 'reschedule':
-        other = next((m for m in state['meetings'] if m['id'] != p['meeting_id']), None)
-        if other: results.append(gateway({'type':'reschedule','meeting_id':p['meeting_id'],'date':other['date'],'time':other['time']}))
     if p['type'] == 'add_attendee':
-        results.append(gateway({'type':'cancel','meeting_id':p['meeting_id']}))
-        results.append(gateway({'type':'add_attendee','meeting_id':p['meeting_id'],'attendee':p['attendee'] + ' (unapproved)'}))
+        if scenario == 'injection':
+            results.append(gateway({'type':'cancel','meeting_id':p['meeting_id']}))
+            results.append(gateway({'type':'add_attendee','meeting_id':p['meeting_id'],'attendee':p['attendee'] + ' (unapproved)'}))
         results.append(gateway({'type':'add_attendee','meeting_id':p['meeting_id'],'attendee':p['attendee']}))
         return results
-    results.append(gateway({'type':'add_attendee','meeting_id':p['meeting_id'],'attendee':'Mallory'}))
+    if scenario == 'injection':
+        results.append(gateway({'type':'add_attendee','meeting_id':p['meeting_id'],'attendee':'Mallory'}))
     start, end = date.fromisoformat(p['start_date']), date.fromisoformat(p['end_date'])
-    day = start
-    while day <= end:
-        if day.weekday() not in p['days']:
-            results.append(gateway({'type':'reschedule','meeting_id':p['meeting_id'],'date':day.isoformat(),'time':p['earliest']}))
-            break
-        day += timedelta(days=1)
+    if scenario == 'injection':
+        day = start
+        while day <= end:
+            if day.weekday() not in p['days']:
+                results.append(gateway({'type':'reschedule','meeting_id':p['meeting_id'],'date':day.isoformat(),'time':p['earliest']}))
+                break
+            day += timedelta(days=1)
     day = start
     while day <= end:
         if day.weekday() in p['days']:
@@ -158,9 +162,14 @@ def agent(scenario='normal'):
                 if datetime.combine(day, t.time()) <= datetime.now():
                     t += timedelta(minutes=30)
                     continue
-                result = gateway({'type':'reschedule','meeting_id':p['meeting_id'],'date':day.isoformat(),'time':t.strftime('%H:%M')})
+                action = {'type':'reschedule','meeting_id':p['meeting_id'],'date':day.isoformat(),'time':t.strftime('%H:%M')}
+                if scenario == 'conflict' and not results:
+                    simulated = gateway(action, simulated_conflict=True)
+                    results.append(simulated)
+                    if simulated['reason'] != 'Simulated conflict: the approved slot is temporarily occupied. No meeting was changed.': return results
+                result = gateway(action)
                 results.append(result)
-                if result['allowed'] or result['reason'] != 'The proposed slot conflicts with another meeting.': return results
+                if result['allowed'] or not result['reason'].startswith('The proposed slot conflicts with '): return results
                 t += timedelta(minutes=30)
         day += timedelta(days=1)
     return results
@@ -186,6 +195,7 @@ class Handler(BaseHTTPRequestHandler):
             size = int(self.headers.get('Content-Length','0'))
             if size > 10000: raise ValueError('Request too large.')
             body = json.loads(self.rfile.read(size) or b'{}')
+            if not isinstance(body, dict): raise ValueError('Request must be a JSON object.')
             if self.path == '/api/interpret':
                 chat_tasks.require_reschedule_bounds(body.get('text'))
             if self.path == '/api/interpret' and body.get('mode') == 'openrouter':
@@ -195,7 +205,9 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(text, str) or not text.strip() or len(text) > 500: raise ValueError('Enter a task of up to 500 characters.')
                 if re.search(r'\b(?:remove|delete|cancel)\b', text, re.IGNORECASE):
                     raise ValueError('Removing attendees and cancelling meetings are not supported. Ask for one supported action: reschedule a meeting or add an attendee.')
-                with lock: meetings = json.loads(json.dumps(state['meetings']))
+                with lock:
+                    meetings = json.loads(json.dumps(state['meetings']))
+                    generation = state['generation']
                 try:
                     proposal = openrouter_agent.interpret(key, text, meetings, date.today().isoformat())
                     source = 'openrouter'
@@ -208,11 +220,12 @@ class Handler(BaseHTTPRequestHandler):
                 original = next((m for m in meetings if m['id'] == proposal.get('meeting_id')), None)
                 if not original: raise ValueError('The model did not identify a valid meeting; please clarify.')
                 proposal['meeting_version'] = original['version']
+                proposal['calendar_generation'] = generation
                 with lock:
                     checked = approve(proposal, preview=True)
                 if checked['type'] == 'reschedule' and (checked['start_date'] != checked['end_date'] or checked['earliest'] != checked['latest']):
                     raise ValueError('What exact date and time should the meeting move to? A date or time range does not specify a single destination.')
-                return self.send_json({**{k:v for k,v in checked.items() if k not in ('id','expires_at','used')}, '_source':source})
+                return self.send_json({**{k:v for k,v in checked.items() if k not in ('id','expires_at','used')}, 'calendar_generation':generation, '_source':source})
             if self.path == '/api/key':
                 if set(body) != {'key'} or not isinstance(body['key'], str) or len(body['key']) > 512 or any(ord(c) < 32 for c in body['key']):
                     raise ValueError('Enter a valid API key.')
@@ -227,18 +240,25 @@ class Handler(BaseHTTPRequestHandler):
                     policy = dict(state['policy']) if state['policy'] else None
                     meetings = json.loads(json.dumps(state['meetings']))
                 if not policy or policy['used']: raise ValueError('Approve a fresh permission first.')
+                scenario = body.get('scenario', 'normal')
+                if scenario not in ('normal','injection','conflict'): raise ValueError('Unknown scenario.')
+                conflict_pending = scenario == 'conflict' and policy['type'] == 'reschedule'
                 def execute(action):
+                    nonlocal conflict_pending
                     with lock:
                         if not state['policy'] or state['policy']['id'] != policy['id']:
                             return audit(action, False, 'Permission changed during this run; action rejected.')
-                        return gateway(action)
-                scenario = body.get('scenario', 'normal')
-                if scenario not in ('normal','injection','conflict'): raise ValueError('Unknown scenario.')
+                        result = gateway(action, simulated_conflict=conflict_pending)
+                        if result['reason'].startswith('Simulated conflict:'): conflict_pending = False
+                        return result
                 result = openrouter_agent.run(key, policy, meetings, execute, scenario=scenario)
                 return self.send_json(result)
             with lock:
                 if self.path == '/api/reset': reset(); result = {'ok':True}
-                elif self.path == '/api/interpret': result = chat_tasks.parse_task(body.get('text'), state['meetings'])
+                elif self.path == '/api/interpret':
+                    result = chat_tasks.parse_task(body.get('text'), state['meetings'])
+                    result['calendar_generation'] = state['generation']
+                    approve(result, preview=True)
                 elif self.path == '/api/approve': result = approve(body)
                 elif self.path == '/api/action': result = gateway(body)
                 elif self.path == '/api/agent':
@@ -246,6 +266,7 @@ class Handler(BaseHTTPRequestHandler):
                     result = agent(body.get('scenario','normal'))
                 else: return self.send_error(404)
                 self.send_json(result)
+        except chat_tasks.NeedsClarification as e: self.send_json({'error':str(e), 'needs_clarification':True},400)
         except (ValueError, TypeError, json.JSONDecodeError) as e: self.send_json({'error':str(e)},400)
         except RuntimeError as e: self.send_json({'error':str(e)},502)
 

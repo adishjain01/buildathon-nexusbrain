@@ -36,6 +36,11 @@ class IntentInterpretationTests(unittest.TestCase):
         raw={'supported':False,'reason':'Removing an attendee is not supported.'}
         with self.assertRaisesRegex(ValueError,'Removing'):
             openrouter_agent.interpret('unused','add Taylor and remove Priya',[], '2026-11-18',request_fn=lambda p:self.response(raw))
+    def test_missing_model_fields_request_clarification(self):
+        from chat_tasks import NeedsClarification
+        raw={'supported':False,'reason':'Who should be added?','missing_fields':['attendee']}
+        with self.assertRaisesRegex(NeedsClarification,'Who should'):
+            openrouter_agent.interpret('unused','add someone',[], '2026-11-18',request_fn=lambda p:self.response(raw))
     def test_invalid_proposal_is_rejected(self):
         with self.assertRaises(ValueError):
             openrouter_agent.interpret('unused','move a meeting',[], '2026-11-18',request_fn=lambda p:self.response({'supported':True,'reason':'','type':'reschedule','meeting_id':'m1'}))

@@ -30,7 +30,7 @@ class GatewayTests(unittest.TestCase):
         server.reset()
         self.assertIn('No active',server.gateway(self.action())['reason'])
     def test_agent_uses_gateway(self):
-        results=server.agent()
+        results=server.agent('injection')
         self.assertFalse(results[0]['allowed'])
         self.assertTrue(results[-1]['allowed'])
         self.assertGreaterEqual(len(server.state['audit']),3)
@@ -49,9 +49,17 @@ class GatewayTests(unittest.TestCase):
             with self.assertRaises(ValueError): server.approve({'type':'add_attendee','meeting_id':'m1','attendee':attendee})
     def test_attendee_agent_uses_gateway(self):
         server.approve({'type':'add_attendee','meeting_id':'m1','attendee':'Taylor'})
-        results = server.agent()
-        self.assertEqual([r['allowed'] for r in results], [False, False, True])
+        results = server.agent('injection')
+        self.assertEqual([r['allowed'] for r in results], [False, False, False, True])
 
+    def test_simulated_conflict_retries_the_approved_slot(self):
+        results=server.agent('conflict')
+        self.assertEqual([r['allowed'] for r in results], [False,True])
+        self.assertIn('Simulated conflict',results[0]['reason'])
+        self.assertEqual(server.state['meetings'][0]['date'],self.start.isoformat())
+    def test_normal_agent_does_not_fake_unauthorized_attempts(self):
+        results=server.agent('normal')
+        self.assertEqual([r['allowed'] for r in results], [True])
     def test_reject_bad_approval(self):
         for update in [{'days':[]},{'days':[True]},{'earliest':'99:99'},{'end_date':(self.start+timedelta(days=40)).isoformat()}]:
             with self.assertRaises(ValueError): server.approve(self.policy | update)
