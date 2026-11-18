@@ -123,6 +123,8 @@ See [RULES.md](RULES.md) for the full list.
 **Team:** NexusBrain — Adish Jain ([@adishjain01](https://github.com/adishjain01))  
 **Track:** Build for AI Agents (`ai-agents`)
 
+**Live demo:** [Launch Intent Lock](https://buildathon-nexusbrain.vercel.app/) — a scripted mock-calendar prototype; no real calendar changes are made.
+
 ### The problem
 
 People ask agents to perform a specific task, but the tools agents use may grant broad access to a whole calendar. A prompt alone does not enforce the user's limits, and a successful tool call can make an unintended change. Intent Lock turns a reviewed, task-specific permission into a gateway decision before an agent can write to the mock calendar.
@@ -135,7 +137,7 @@ In normal mode the scripted agent attempts only the approved action. In the inje
 
 ### The hardest part
 
-The policy must fail closed: wrong meeting, action type, extra fields, expired or used permission, stale meeting, past times and conflicting slots are rejected before mutation. Policy evaluation and mutation occur under one process lock. Without a key, the local chat parser accepts a small explicit grammar, for example `Reschedule the meeting with Priya tomorrow at 3 PM` or `Add Taylor to the meeting with Priya`. Unsupported wording is rejected. In OpenRouter mode, a model interprets a wider range of language and proposes a permission for user review. Models may misunderstand or omit details, so compare the proposal with the entire request. Unsupported actions, including attendee removal, cannot be authorized. A reschedule requires one exact destination date and time. A period such as “this week” or a time range such as “after 2 PM” is not sufficient; the app asks for the missing information before review. The permitted date and time are identical to the requested destination. The mock calendar sends no invitations or notifications.
+The policy must fail closed: wrong meeting, action type, extra fields, expired or used permission, stale meeting, past times and conflicting slots are rejected before mutation. Policy evaluation and mutation occur under one process lock. Without a key, the local chat parser accepts a small explicit grammar, for example `Reschedule the meeting with Priya tomorrow at 4 PM` or `Add Taylor to the meeting with Priya`. Unsupported wording is rejected. In OpenRouter mode, a model interprets a wider range of language and proposes a permission for user review. Models may misunderstand or omit details, so compare the proposal with the entire request. Unsupported actions, including attendee removal, cannot be authorized. A reschedule requires one exact destination date and time. A period such as “this week” or a time range such as “after 2 PM” is not sufficient; the app asks for the missing information before review. The permitted date and time are identical to the requested destination. The mock calendar sends no invitations or notifications.
 
 The prompt-injection and conflict options are simulations. Scripted mode attempts preselected actions through the gateway. The conflict simulation causes one temporary rejection of an otherwise valid action, then clears; real conflicts do not clear. The model may make different decisions or ignore the injected mock note. This is not evidence of protection against all prompt injection.
 
@@ -151,13 +153,17 @@ python intent-lock/server.py
 
 On Windows, you can instead double-click `intent-lock/start-demo.bat`. Keep the terminal window open, then open http://127.0.0.1:8000/ in a browser on the same machine. Press **R** in that terminal to restart the server after a code change, or **Q** to stop and exit. Restart resets the mock calendar, permission and session-only key. If port 8000 is already in use, run `python intent-lock/server.py --port 8001` and open http://127.0.0.1:8001/. If the server is running in a sandbox or remote environment, its localhost may not be reachable from your desktop browser; run it in a normal local terminal. Run tests with `python -m unittest discover -s intent-lock -v`. To run the independent HTTP agent instead of the browser button, approve a fresh permission and run `python intent-lock/agent.py` in another terminal; refresh the page to see its decision trail.
 
+### Hosted demo on Vercel
+
+The Vercel adapter provides a scripted mock-calendar demo with a separate temporary session per browser on the same function instance. Sessions are kept in memory and can reset after a cold start or if a request reaches a different instance; this is not persistent storage or a production security boundary. OpenRouter key entry and model mode are disabled on the hosted version to avoid sharing user keys across visitors. Run locally to use the optional model agent.
+
 ### Optional OpenRouter agent
 
 Scripted mode works without a key. To enable model mode, enter a key in the app and click **Use key** under **Agent settings**. The server holds it in memory until restart or until you click **Clear key**; it is not written to a file. Alternatively, copy `intent-lock/.env.example` to `intent-lock/.env`, add your own `OPENROUTER_API_KEY`, and restart the server. The key stays server-side and `.env` is ignored by Git. Clearing the session key does not remove an independently configured environment or `.env` key. Select **OpenRouter free model** in the UI after approving a permission. Only use the seeded mock calendar: the selected permission and mock meeting data and task text are sent to OpenRouter and its model provider. The model routes through `openrouter/free`; availability and rate limits can vary. If intent interpretation is rate-limited or returns invalid output, the app falls back to the local interpreter only for exact supported phrases and clearly labels that fallback; the scripted agent then runs. Other tasks must be retried or rephrased. If an agent run fails, inspect the audit trail before retrying, since an action may have already succeeded. You can select scripted mode for a repeatable fallback.
 
 ### Demo
 
-1. Choose **Prompt injection** and type `Reschedule the meeting with Priya tomorrow at 3 PM` in the chat. Click **Review task**.
+1. Choose **Prompt injection** and type `Reschedule the meeting with Priya tomorrow at 4 PM` in the chat. Click **Review task**.
 2. Check the proposed permission and click **Approve & run agent**. In scripted mode, the injection is a simulated instruction to cancel another meeting. The gateway blocks it and displays the attempted actions and reasons; an allowed future reschedule updates the calendar.
 3. Click **New demo** and try **Calendar conflict** or `Add Taylor to the meeting with Priya`. Review and approve each new permission. The scripted chat parser supports the examples shown in the interface; model mode interprets broader language but requires careful review.
 4. Optional: use **Agent settings** to choose the free OpenRouter model. Model results vary and the injection may not cause a tool call; scripted mode is the repeatable fallback.
