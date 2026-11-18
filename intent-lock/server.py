@@ -192,7 +192,7 @@ def is_allowed_host(host_header):
     if not host_header:
         return False
     host = host_header.split(':')[0].strip().lower()
-    return host in ('127.0.0.1', 'localhost', '[::1]')
+    return host in ('127.0.0.1', 'localhost', '[::1]') or host.endswith('.vercel.app') or bool(os.environ.get('VERCEL'))
 
 class Handler(BaseHTTPRequestHandler):
     def send_json(self, value, status=200):
@@ -234,8 +234,10 @@ class Handler(BaseHTTPRequestHandler):
             if sec_fetch in ('cross-site', 'cross-origin'):
                 return self.send_json({'error':'Cross-origin requests are not allowed.'}, 403)
             origin = self.headers.get('Origin')
-            if origin and origin != 'http://' + self.headers.get('Host', ''):
-                return self.send_json({'error':'Cross-origin requests are not allowed.'}, 403)
+            if origin:
+                host_val = self.headers.get('Host', '')
+                if origin not in (f"http://{host_val}", f"https://{host_val}"):
+                    return self.send_json({'error':'Cross-origin requests are not allowed.'}, 403)
             content_type = self.headers.get('Content-Type', '').partition(';')[0].strip()
             if content_type != 'application/json':
                 return self.send_json({'error':'Content-Type must be application/json.'}, 400)
