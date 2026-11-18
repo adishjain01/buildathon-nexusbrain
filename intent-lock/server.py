@@ -13,8 +13,11 @@ import openrouter_agent
 ROOT = Path(__file__).parent
 lock = threading.RLock()
 state = {}
+session_key = ''
 
 def openrouter_key():
+    if session_key:
+        return session_key
     key = os.environ.get('OPENROUTER_API_KEY', '').strip()
     path = ROOT / '.env'
     if not key and path.is_file():
@@ -161,9 +164,20 @@ class Handler(BaseHTTPRequestHandler):
         else: self.send_error(404)
     def do_POST(self):
         try:
+            global session_key
+            origin = self.headers.get('Origin')
+            if origin and origin != 'http://' + self.headers.get('Host', ''):
+                return self.send_json({'error':'Cross-origin requests are not allowed.'}, 403)
             size = int(self.headers.get('Content-Length','0'))
             if size > 10000: raise ValueError('Request too large.')
             body = json.loads(self.rfile.read(size) or b'{}')
+            if self.path == '/api/key':
+                if set(body) != {'key'} or not isinstance(body['key'], str) or len(body['key']) > 512 or any(ord(c) < 32 for c in body['key']):
+                    raise ValueError('Enter a valid API key.')
+                with lock:
+                    session_key = body['key'].strip()
+                    self.send_json({'configured':bool(openrouter_key()), 'session_key_set':bool(session_key)})
+                return
             if self.path == '/api/agent' and body.get('mode') == 'openrouter':
                 key = openrouter_key()
                 if not key: raise ValueError('OpenRouter key not configured. Use scripted mode or add OPENROUTER_API_KEY to intent-lock/.env.')

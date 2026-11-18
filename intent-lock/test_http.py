@@ -4,6 +4,7 @@ import unittest
 from datetime import date, timedelta
 from http.server import ThreadingHTTPServer
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 import server
 
 class HttpDemoTests(unittest.TestCase):
@@ -33,5 +34,19 @@ class HttpDemoTests(unittest.TestCase):
         self.assertTrue(json.loads(self.request('/api/state'))['policy']['used'])
         self.request('/api/reset',{})
         self.assertIsNone(json.loads(self.request('/api/state'))['policy'])
+    def test_session_key_is_not_exposed_and_cross_origin_is_rejected(self):
+        key = 'test-session-key-not-a-real-secret'
+        try:
+            self.assertTrue(json.loads(self.request('/api/key', {'key':key}))['session_key_set'])
+            state = self.request('/api/state')
+            self.assertNotIn(key, state)
+            self.assertTrue(json.loads(state)['openrouter_configured'])
+            req = Request(self.base+'/api/key', data=b'{"key":""}', headers={'Content-Type':'application/json','Origin':'http://example.com'})
+            with self.assertRaises(HTTPError) as error: urlopen(req, timeout=5)
+            self.assertEqual(error.exception.code,403)
+            self.assertEqual(server.session_key,key)
+        finally:
+            self.request('/api/key', {'key':''})
+        self.assertEqual(server.session_key,'')
 
 if __name__ == '__main__': unittest.main()

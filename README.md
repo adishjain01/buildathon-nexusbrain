@@ -151,7 +151,7 @@ On Windows, you can instead double-click `intent-lock/start-demo.bat`. Keep the 
 
 ### Optional OpenRouter agent
 
-Scripted mode works without a key. To enable model mode, copy `intent-lock/.env.example` to `intent-lock/.env`, add your own `OPENROUTER_API_KEY`, and restart the server. The key stays server-side and `.env` is ignored by Git. Select **OpenRouter free model** in the UI after approving a permission. Only use the seeded mock calendar: the selected permission and mock meeting data are sent to OpenRouter and its model provider. The model routes through `openrouter/free`; availability and rate limits can vary. If a model run fails, inspect the audit trail before retrying, since an action may have already succeeded. You can select scripted mode for a repeatable fallback.
+Scripted mode works without a key. To enable model mode, enter a key in the app and click **Use key for this session**. The server holds it in memory until restart or until you click **Clear session key**; it is not written to a file. Alternatively, copy `intent-lock/.env.example` to `intent-lock/.env`, add your own `OPENROUTER_API_KEY`, and restart the server. The key stays server-side and `.env` is ignored by Git. Clearing the session key does not remove an independently configured environment or `.env` key. Select **OpenRouter free model** in the UI after approving a permission. Only use the seeded mock calendar: the selected permission and mock meeting data are sent to OpenRouter and its model provider. The model routes through `openrouter/free`; availability and rate limits can vary. If a model run fails, inspect the audit trail before retrying, since an action may have already succeeded. You can select scripted mode for a repeatable fallback.
 
 ### Demo
 
